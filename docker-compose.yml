@@ -1,0 +1,65 @@
+# Local development cluster: one frontend, one Block Index, one verifier and
+# one storage node in each of three simulated zones (z1, z2, z3), mirroring
+# the three availability zones of ap-south-1 used for measurement.
+#
+#   docker compose up --build
+#   curl localhost:8080/health
+
+x-satchel: &satchel
+  image: satchel:dev
+  build: .
+  restart: unless-stopped
+  environment: &env
+    RUST_LOG: ${RUST_LOG:-info}
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:$${SATCHEL_PORT}/health || exit 1"]
+    interval: 10s
+    timeout: 2s
+    retries: 3
+
+services:
+  api:
+    <<: *satchel
+    command: satchel-api
+    environment: { <<: *env, SATCHEL_PORT: "8080" }
+    ports: ["8080:8080"]
+    depends_on: [index, node-z1, node-z2, node-z3]
+
+  index:
+    <<: *satchel
+    command: satchel-index
+    environment: { <<: *env, SATCHEL_PORT: "8081" }
+    ports: ["8081:8081"]
+
+  node-z1:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z1 }
+    ports: ["8091:8090"]
+    volumes: ["node-z1:/data"]
+
+  node-z2:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z2 }
+    ports: ["8092:8090"]
+    volumes: ["node-z2:/data"]
+
+  node-z3:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z3 }
+    ports: ["8093:8090"]
+    volumes: ["node-z3:/data"]
+
+  verifier:
+    <<: *satchel
+    command: satchel-verifier
+    environment: { <<: *env, SATCHEL_PORT: "8085" }
+    ports: ["8085:8085"]
+    depends_on: [index]
+
+volumes:
+  node-z1:
+  node-z2:
+  node-z3:

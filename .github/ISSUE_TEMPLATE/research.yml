@@ -1,0 +1,27 @@
+name: Research task
+description: Find, read and summarise sources on Magic Pocket, pricing or costs.
+title: "[Research] "
+labels: ["type: research"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question to answer
+      description: What do we need to know when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where to look
+      description: Known starting points such as blog posts, talks, filings or pricing pages.
+  - type: textarea
+    id: output
+    attributes:
+      label: Expected output
+      description: Where the findings go (file path) and in what form.
+      value: |
+        - [ ] Sources added to `docs/sources/README.md`
+        - [ ] Notes written to `docs/...`
+    validations:
+      required: true
