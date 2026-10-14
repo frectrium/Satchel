@@ -1,0 +1,10 @@
+target/
+.git/
+.github/
+docs/
+infra/
+**/*.md
+!crates/**/*.md
+.DS_Store
+.env
+rust-toolchain.toml

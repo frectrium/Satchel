@@ -1,0 +1,23 @@
+name: Task
+description: A unit of build, infra or writing work.
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should exist or work when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: mp
+    attributes:
+      label: Magic Pocket counterpart
+      description: Which Dropbox design decision this mirrors, with a source link. Write N/A if none.
+  - type: textarea
+    id: done
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+    validations:
+      required: true
