@@ -1,6 +1,6 @@
 # One image holds every Satchel binary; docker-compose picks which to run.
 
-FROM rust:1.91-slim-bookworm AS builder
+FROM rust:1.99-slim-bookworm AS builder
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
