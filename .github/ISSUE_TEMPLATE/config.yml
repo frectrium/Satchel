@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Project brief
+    url: https://github.com/frectrium/Satchel/blob/main/docs/SATCHEL_PROJECT.md
+    about: Scope, objectives and the week-by-week plan.

@@ -1,0 +1,64 @@
+# --- Rust ---
+/target/
+**/*.rs.bk
+*.pdb
+
+# --- Local block data, benchmarks and experiment output ---
+/data/
+/results/raw/
+*.profraw
+flamegraph.svg
+perf.data*
+
+# --- Secrets and local config (never commit credentials) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.aws/
+
+# --- Terraform ---
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.auto.tfvars
+terraform.tfvars
+.terraformrc
+terraform.rc
+
+# --- Python (analysis notebooks, plotting scripts) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# --- Documents: keep sources, ignore office lock/temp files ---
+~$*
+*.tmp
+.~lock.*#
+
+# --- OS ---
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# --- Editors / IDEs ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+.fleet/
+.zed/
