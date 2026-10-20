@@ -6,7 +6,9 @@
 | [`sources/`](sources/README.md) | Source log. Every source we cite, with a stable ID |
 | `research/` | Research notes, one file per topic (architecture, cost, outcome, pricing) |
 | `reports/` | Weekly deliverables (Week 1 summary, Week 2 report, final report) |
-| `design/` | Architecture diagrams and the Design Decision Log |
+| `design/` | Architecture diagrams, exercise plan, test strategy and the Design Decision Log |
+| `experiments/` | How to run the load generator and reproduce each experiment |
+| `cost/` | AWS, Azure and on-prem cost models and the comparison |
 
 Folders without a link above don't exist yet. Create them with your first file in them.
 

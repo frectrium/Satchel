@@ -15,6 +15,7 @@ Closes #
 ## Checklist
 
 - [ ] `cargo fmt`, `cargo clippy` and `cargo test` pass locally (code PRs)
+- [ ] Tests added or updated for the change (code PRs)
 - [ ] New sources are added to [`docs/sources/README.md`](https://github.com/frectrium/Satchel/blob/main/docs/sources/README.md) (research PRs)
 - [ ] Design decisions are recorded in the Design Decision Log
 - [ ] Docs and README are updated if behaviour or setup changed

@@ -11,7 +11,7 @@ Satchel rebuilds the core of the storage system Dropbox wrote to move off AWS S3
 [![Rust](https://img.shields.io/badge/rust-1.91%2B-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![Board](https://img.shields.io/badge/project-board-8957e5.svg?logo=github)](https://github.com/users/frectrium/projects/1)
 
-[Project brief](docs/SATCHEL_PROJECT.md) · [Issues](https://github.com/frectrium/Satchel/issues) · [Milestones](https://github.com/frectrium/Satchel/milestones) · [Contributing](CONTRIBUTING.md)
+[Project brief](docs/SATCHEL_PROJECT.md) · [This week](https://github.com/frectrium/Satchel/issues/10) · [Issues](https://github.com/frectrium/Satchel/issues) · [Milestones](https://github.com/frectrium/Satchel/milestones) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -108,7 +108,7 @@ You can also run a single service without Docker:
 SATCHEL_PORT=8090 SATCHEL_ZONE=z1 cargo run -p satchel-node
 ```
 
-> **Status:** the services are skeletons that serve `GET /health`. The storage path gets built in Week 3. See the [roadmap](#roadmap).
+> The services are skeletons that only serve `GET /health` for now. See [Status](#status).
 
 ## Repository layout
 
@@ -128,6 +128,29 @@ Satchel/
 └── docker-compose.yml      # Local 3-zone dev cluster
 ```
 
+## Status
+
+**Current week:** Week 1, Sources & Summary (due Tuesday 20 October 2026). The plan for the week, with its tasks as sub-issues, is in [#10](https://github.com/frectrium/Satchel/issues/10).
+
+### Done
+
+- Project brief, Source Log template and docs structure
+- Cargo workspace with skeleton services (`api`, `index`, `node`, `verifier`) and a shared `BlockHash` type with tests
+- Dockerfile and a local 3-zone Docker Compose cluster
+- CI on every PR and on `main`: fmt, clippy, tests, Docker image build and a Compose config check
+- `main` protected: PRs need 1 approval, resolved conversations and green CI, and are squash-merged
+- Dependabot for Cargo, GitHub Actions and Docker
+- Issue forms, PR template, CODEOWNERS and a [contributing guide](CONTRIBUTING.md)
+- Issues for every week, grouped under each week's deliverable issue, on the [project board](https://github.com/users/frectrium/projects/1)
+
+### Next
+
+- **Week 1:** collect primary sources and write the one-page summary
+- **Week 2:** case analysis, exercise plan, test strategy, integration test harness, AWS groundwork
+- **Week 3:** build the storage path, deploy to AWS with Terraform, run experiments and cost models
+- **Week 4:** final report and a tagged release
+- **Week 5:** viva
+
 ## Roadmap
 
 | Week | Focus | Deliverable |
@@ -138,7 +161,7 @@ Satchel/
 | **4** | Report preparation. Fold in the Design Decision Log | Final report |
 | **5** | Project viva | Viva presentation |
 
-Progress is tracked in the [milestones](https://github.com/frectrium/Satchel/milestones) and on the [project board](https://github.com/users/frectrium/projects/1).
+Each week is a [milestone](https://github.com/frectrium/Satchel/milestones). Its deliverable issue holds the plan for the week, with that week's tasks as sub-issues. Progress is on the [project board](https://github.com/users/frectrium/projects/1).
 
 ## Team
 
@@ -150,7 +173,7 @@ Progress is tracked in the [milestones](https://github.com/frectrium/Satchel/mil
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit style, PR rules and how we handle sources.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before your first PR. It covers how we create branches, commit, test, review and merge, what `main`'s protection requires, and how we handle sources.
 
 ## License
 
