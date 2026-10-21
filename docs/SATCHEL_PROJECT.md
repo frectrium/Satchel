@@ -88,9 +88,9 @@ The next annual filing reported a further $23.3M infrastructure-cost decrease an
 - [x] Dropbox Tech Blog posts on Magic Pocket (announcement, architecture, hardware, operations)
 - [x] Conference talks by Dropbox engineers on Magic Pocket
 - [x] Dropbox S-1 filing (2018) for cost and outcome data
-- [ ] Media coverage of the migration (for context only, not as a primary source)
-- [ ] Current AWS S3 and Azure Blob Storage pricing pages and calculators
-- [ ] Hardware, power, colocation and bandwidth price references for the on-prem estimate
+- [x] Media coverage of the migration (for context only, not as a primary source)
+- [x] Current AWS S3 and Azure Blob Storage pricing pages and calculators
+- [x] Hardware, power, colocation and bandwidth price references for the on-prem estimate
 
 ---
 
