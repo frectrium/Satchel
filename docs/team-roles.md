@@ -6,9 +6,9 @@ Issue #16. Who owns what in Satchel. The work is split equally across the three 
 
 | Member | Main area | Also owns |
 |---|---|---|
-| Parshv Joshi (@frectrium) | Architecture and storage design | Repo and board (owner of `main` ruleset), exercise plan, Design Decision Log, observability, load generator and S3 baseline. Editor of the Week 1 summary, viva coordinator |
-| Guru Vyas (@VyasGuru) | Case analysis and cloud infrastructure | Filings and talks research, problem and solution sections, AWS account, Terraform, Docker image, deployments, release. Editor of the Week 2 report and the Week 3 add-ons |
-| Jas Mehta (@JasMehta08) | Cost and economics, testing | Pricing and on-prem references, workload model, AWS and Azure calculator models, break-even comparison, test strategy and integration test harness. Editor of this doc and the final report |
+| Parshv Joshi (@frectrium) | Architecture and storage design | Repo and board (owner of `main` ruleset), exercise plan, Design Decision Log, observability, load generator and S3 baseline, cost sizing model. Editor of the Week 1 summary, viva coordinator |
+| Guru Vyas (@VyasGuru) | Case analysis and cloud infrastructure | Filings and talks research, problem and solution sections, AWS account, Terraform, Docker image, deployments, release, pricing calculator web UI. Editor of the Week 2 report and the Week 3 add-ons |
+| Jas Mehta (@JasMehta08) | Cost and economics, testing | Pricing and on-prem references, workload model, AWS and Azure calculator models, break-even comparison, cost calculator engine and CLI, test strategy and integration test harness. Editor of this doc and the final report |
 
 ## 2. Issues by owner
 
@@ -16,10 +16,10 @@ Issue #16. Who owns what in Satchel. The work is split equally across the three 
 |---|---|---|---|
 | 1 | #2 Tech blog sources, #8 Architecture notes, #30 Workflow docs, editor of #10 | #3 Talks, #4 S-1 data, #9 Case background | #5 Media, #6 Cloud pricing, #7 On-prem prices |
 | 2 | #11 Architecture diagram, #14 Exercise plan, #17 Design Decision Log, #19 Week 3 issues | #12 Problem, #13 Solution, #33 AWS groundwork, editor of #18 | #15 Workload model, #31 Test strategy, #32 Integration harness, editor of #16 |
-| 3 | #21 Observability, #22 Load generator and S3 baseline | #20 Terraform, #34 Docker image, #35 First AWS deployment, editor of #37 | #23 AWS calculator, #24 Azure calculator, #26 Break-even |
-| 4 | #27 Fold Decision Log into the report | #36 Release v1.0 | Editor of #28 |
+| 3 | #21 Observability, #22 Load generator and S3 baseline, #53 Sizing model | #20 Terraform, #34 Docker image, #35 First AWS deployment, editor of #37 | #23 AWS calculator, #24 Azure calculator, #26 Break-even, #52 Cost engine and CLI |
+| 4 | #27 Fold Decision Log into the report | #36 Release v1.0, #54 Pricing calculator web UI | Editor of #28 |
 | 5 | Coordinator of #29 | | |
-| Count | 10 issues + 2 lead roles | 10 issues + 2 lead roles | 9 issues + 2 lead roles |
+| Count | 11 issues + 2 lead roles | 11 issues + 2 lead roles | 10 issues + 2 lead roles |
 
 **Shared by all three:**
 - #1 Local setup
@@ -91,6 +91,9 @@ The build issues come from the exercise plan (#14) through #19, so component own
 | Terraform, Docker image and deployment | n/a (Dropbox ran its own data centers) | Guru (#20, #34, #35) |
 | Metrics and dashboards | n/a | Parshv (#21) |
 | Load generator and S3 baseline | n/a | Parshv (#22) |
+| Cost calculator engine and CLI (`satchel-cost`) | n/a | Jas (#52) |
+| Sizing model (`layout` module in `satchel-cost`) | n/a | Parshv (#53) |
+| Pricing calculator web UI | n/a | Guru (#54) |
 
 ## 5. How we work together
 
