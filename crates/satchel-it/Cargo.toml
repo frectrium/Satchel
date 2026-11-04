@@ -1,0 +1,18 @@
+[package]
+name = "satchel-it"
+description = "Integration tests that drive a running Satchel cluster over HTTP"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+ureq.workspace = true
+
+[lints]
+workspace = true

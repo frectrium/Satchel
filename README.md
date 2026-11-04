@@ -110,6 +110,22 @@ SATCHEL_PORT=8090 SATCHEL_ZONE=z1 cargo run -p satchel-node
 
 > The services are skeletons that only serve `GET /health` for now. See [Status](#status).
 
+### Run the integration tests
+
+The integration tests in `crates/satchel-it` drive the running services over HTTP. One command builds the image, starts the cluster, runs the tests, prints the cluster logs if anything fails and tears everything down:
+
+```bash
+scripts/integration-test.sh
+```
+
+They cover every Satchel service in `docker-compose.yml`, so they need no change when the cluster grows. `cargo test --workspace` skips them, because they need a cluster. To run them against a cluster that is already up, run the command below. Each service's URL defaults to its host port, and `SATCHEL_IT_<SERVICE>_URL` overrides it, for example `SATCHEL_IT_NODE_Z1_URL`:
+
+```bash
+cargo test -p satchel-it -- --ignored
+```
+
+CI runs the same script on every PR, in the **Integration tests (Compose)** job.
+
 ## Repository layout
 
 ```
@@ -119,10 +135,12 @@ Satchel/
 │   ├── satchel-api/        # Frontend
 │   ├── satchel-index/      # Block Index
 │   ├── satchel-node/       # Storage node (OSD)
-│   └── satchel-verifier/   # Background verifier (Pocket Watch)
+│   ├── satchel-verifier/   # Background verifier (Pocket Watch)
+│   └── satchel-it/         # Integration tests against a running cluster
 ├── docs/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
+├── scripts/                # integration-test.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS
 ├── Dockerfile              # One image, all binaries
 └── docker-compose.yml      # Local 3-zone dev cluster
