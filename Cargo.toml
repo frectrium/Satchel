@@ -6,6 +6,7 @@ members = [
     "crates/satchel-index",
     "crates/satchel-node",
     "crates/satchel-verifier",
+    "crates/satchel-it",
 ]
 
 [workspace.package]
@@ -27,6 +28,7 @@ sha2 = "0.11"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+ureq = { version = "3.4", default-features = false, features = ["json"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
