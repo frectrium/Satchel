@@ -2,7 +2,7 @@
 
 Issue #31. How Satchel is tested, so every Week 3 build issue (#19) knows which tests it has to ship with. Each requirement has an ID (`TS-...`). A build issue links to the IDs it must meet, and is done when those tests pass.
 
-The component list and erasure coding parameters come from the exercise plan (#14). Where #14 hasn't fixed a number yet, this doc says **(set by #14)**. The doc gets updated when #14 merges.
+The component list, replica count, erasure coding parameters and repair threshold come from the exercise plan (#14).
 
 ## 1. How Dropbox tests Magic Pocket, and what Satchel copies
 
@@ -18,7 +18,7 @@ The component list and erasure coding parameters come from the exercise plan (#1
 | Level | What runs | Where | When | Owner |
 |---|---|---|---|---|
 | **Unit** | `#[test]` and `#[tokio::test]` functions next to the code, one module or crate at a time. No network, no Docker | Developer machine and CI | Every PR | Author of the change |
-| **Integration** | Tests that drive the six running services over HTTP, as a client would | Local Compose cluster (`docker compose up`), locally and in CI | Every PR | Author of the change. Harness from #32 |
+| **Integration** | Tests that drive every service in `docker-compose.yml` over HTTP, as a client would | Local Compose cluster (`docker compose up`), locally and in CI | Every PR | Author of the change. Harness from #32 |
 | **End-to-end (AWS)** | The same integration suite pointed at the AWS deployment, plus failure drills | 3-AZ cluster in ap-south-1 (#20, #35) | Before each experiment run and before the release (#36) | Whoever runs the experiment |
 
 Performance is **not** a test level. See section 8.
@@ -36,7 +36,7 @@ The status codes below are proposals. The API build issue may change them, and t
 | TS-API-3 | A block put earlier is still readable after the cluster restarts (`docker compose restart`) |
 | TS-API-4 | Putting the same block twice stores it once (dedup) and both puts succeed |
 | TS-API-5 | Get or delete of an unknown hash returns 404 |
-| TS-API-6 | A malformed hash returns 400. A block over 4 MB returns 413 (4 MB is the Magic Pocket block limit [B2]) |
+| TS-API-6 | A malformed hash or an empty block returns 400. A block over 4 MB returns 413 (4 MB is the Magic Pocket block limit [B2]) |
 | TS-API-7 | A deleted block can no longer be read |
 | TS-API-8 | When the Block Index is down, put and get fail with a clear 5xx, not a hang (a timeout is set) |
 
@@ -63,12 +63,12 @@ The status codes below are proposals. The API build issue may change them, and t
 
 | ID | The test shows that |
 |---|---|
-| TS-REP-1 | After a put, the block is on the required number of nodes **(set by #14)**, each in a different zone |
+| TS-REP-1 | After a put, the block is on 3 nodes, one in each zone (#14) |
 | TS-REP-2 | A get still succeeds with any one node stopped |
 
 ### Erasure coding
 
-Parameters: k data and m parity fragments **(set by #14)**. Magic Pocket's 2024 choices are RS(6,3) and LRC(12,2,2) [T9].
+Parameters: RS(6,3), so k = 6 data and m = 3 parity fragments (#14). Magic Pocket's 2024 choices are RS(6,3) and LRC(12,2,2) [T9].
 
 | ID | The test shows that |
 |---|---|
@@ -91,7 +91,7 @@ Parameters: k data and m parity fragments **(set by #14)**. Magic Pocket's 2024 
 
 | ID | The test shows that |
 |---|---|
-| TS-SVC-1 | All six services answer `GET /health` with `status: ok` and their service name. **This is the first integration test (#32)** |
+| TS-SVC-1 | Every service in `docker-compose.yml` answers `GET /health` with `status: ok` and its service name. **This is the first integration test (#32)** |
 | TS-SVC-2 | Each service reads its port from `SATCHEL_PORT` and falls back to its default |
 
 ## 4. Test data
@@ -101,7 +101,7 @@ Parameters: k data and m parity fragments **(set by #14)**. Magic Pocket's 2024 
 
   | Size | Why |
   |---|---|
-  | 0 bytes | Edge case. Allowed or rejected **(set by #14)**, but defined |
+  | 0 bytes | Edge case. Must be rejected with 400 (TS-API-6) |
   | 1 byte | Smallest real block |
   | 4 KiB | Typical disk page |
   | 128 KiB | S3 minimum billable object size for some tiers [P1] |
@@ -117,11 +117,11 @@ Parameters: k data and m parity fragments **(set by #14)**. Magic Pocket's 2024 
 
 | ID | Failure | How it's injected | Pass when |
 |---|---|---|---|
-| TS-FAIL-1 | A storage node stops | `docker compose stop node-z2` (on AWS: stop the instance) | Reads still succeed (TS-REP-2, TS-EC-5) |
-| TS-FAIL-2 | A node stays down past the repair threshold | Keep it stopped | Missing copies or fragments are rebuilt on other nodes. Magic Pocket waits 15 minutes [B2]; Satchel makes the threshold configurable and uses seconds in tests **(value set by #14)** |
+| TS-FAIL-1 | A storage node stops | `docker compose stop` on one storage node (on AWS: stop the instance) | Reads still succeed (TS-REP-2, TS-EC-5) |
+| TS-FAIL-2 | A node stays down past the repair threshold | Keep it stopped | Missing copies or fragments are rebuilt on other nodes. Magic Pocket waits 15 minutes [B2]; Satchel reads the threshold from `SATCHEL_REPAIR_AFTER` and uses 30 s in tests (#14) |
 | TS-FAIL-3 | A block is corrupted on disk | Flip one byte in the stored file inside the node container (`docker compose exec`) | The verifier reports it (TS-VER-1) and a get still returns correct data from another copy or from decoding |
 | TS-FAIL-4 | A block is deleted from disk | Remove the stored file inside the node container | The verifier reports it (TS-VER-2) |
-| TS-FAIL-5 | A whole zone is lost | Stop every node in one zone | Reads still succeed if #14's placement promises zone tolerance. Mirrors Dropbox's weekly zone drill [T9] |
+| TS-FAIL-5 | A whole zone is lost | Stop every node in one zone | Reads still succeed, because #14's placement tolerates the loss of a zone. Mirrors Dropbox's weekly zone drill [T9] |
 
 TS-FAIL-1 to TS-FAIL-4 run in CI once the features they test exist. TS-FAIL-5 runs before experiments and the release.
 
