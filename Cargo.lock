@@ -763,8 +763,13 @@ name = "satchel-verifier"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "reqwest",
  "satchel-common",
+ "serde",
+ "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

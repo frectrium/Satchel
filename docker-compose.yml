@@ -59,9 +59,16 @@ services:
   verifier:
     <<: *satchel
     command: satchel-verifier
-    environment: { <<: *env, SATCHEL_PORT: "8085" }
+    environment:
+      <<: *env
+      SATCHEL_PORT: "8085"
+      SATCHEL_INDEX_URL: http://index:8081
+      SATCHEL_NODES: node-z1@z1=http://node-z1:8090,node-z2@z2=http://node-z2:8090,node-z3@z3=http://node-z3:8090
+      # Pocket Watch scrubs every 1 to 2 weeks [B3]. The lab cluster is small,
+      # so once a minute keeps the failure tests short.
+      SATCHEL_VERIFY_EVERY_SECS: "60"
     ports: ["8085:8085"]
-    depends_on: [index]
+    depends_on: [index, node-z1, node-z2, node-z3]
 
 volumes:
   node-z1:
