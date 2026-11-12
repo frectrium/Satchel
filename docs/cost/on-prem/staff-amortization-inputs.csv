@@ -1,0 +1,18 @@
+input,value,unit,source
+software_engineers,9,FTE,about 8 to 10 engineers operated the storage software in 2024 [T9]. Midpoint
+software_engineers_low,8,FTE,[T9]
+software_engineers_high,10,FTE,[T9]
+engineer_salary_usd,135980,"USD per year, base pay","US median, software developers, May 2025 [H16]"
+sites,2,sites,"two regions, as in the hardware part [B2][B5]"
+technicians_on_site,2,"people on site at all times, per site",one to two qualified operators on site 24x7 [H17]. Upper end
+technicians_on_site_low,1,"people on site at all times, per site",[H17]
+hours_per_fte,2080,hours per year,"40 hours x 52 weeks (our calc). Ignores leave, so it understates headcount"
+technician_salary_usd,99130,"USD per year, base pay","US median, network and computer systems administrators, May 2025 [H11]"
+wage_share_of_cost,0.7,wages / total employer cost,"private industry, June 2026 [H15]"
+life_years,5,years,"datacenter equipment 3 to 5 years, some infrastructure moved from 4 to 5 years in 2024 [F3]"
+life_years_short,4,years,Dropbox's earlier life for infrastructure [F2][F3]
+life_years_long,6,years,Amazon servers [H13]
+cost_of_capital,0.0934,per year,"WACC, US Software (System & Application), January 2026 [H18]"
+cost_of_capital_low,0.053,per year,"weighted-average discount rate on Dropbox's finance leases, which are mostly infrastructure, 2025 [F3]"
+cost_of_capital_high,0.1066,per year,"WACC, US Software (Internet), January 2026 [H18]"
+cost_of_capital_none,0.0,per year,"cash view, no cost of capital (our inference)"
