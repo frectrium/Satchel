@@ -126,6 +126,16 @@ cargo test -p satchel-it -- --ignored
 
 CI runs the same script on every PR, in the **Integration tests (Compose)** job.
 
+### Run the cost calculator
+
+`satchel-cost` prices the case workload (#15) on AWS, Azure, on-prem and Satchel on EC2, and finds the data volume at which owning breaks even. Every default price is in the TOML files in `crates/satchel-cost/prices/`, tagged with its Source Log ID, and the method is in [`docs/cost/method.md`](docs/cost/method.md). Inputs that are proposed, assumed or not yet sourced are listed in `flagged-inputs.csv` and on every run.
+
+```bash
+cargo run -p satchel-cost                                  # base case summary
+cargo run -p satchel-cost -- --list                        # sensitivity cases
+cargo run -p satchel-cost -- --prices crates/satchel-cost/prices --out docs/cost/output
+```
+
 ## Repository layout
 
 ```

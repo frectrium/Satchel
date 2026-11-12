@@ -1,0 +1,9 @@
+input,value,note
+capital.wacc,"0.0934","proposed in onprem.toml [H18]"
+staff.employer_overhead_multiplier,"1 / 0.7 (onprem.toml has 1.0)","onprem.toml's placeholder is replaced by the sourced wage share [H15]"
+space.colo.nova_usd_per_kw_month,"172.5","midpoint of [H7]'s range, per month assumed (our calc). Power, space and network are Guru's part of #25"
+network.transit,"average egress, no peak factor","a peak-to-average factor has no source (our inference)"
+hardware.drive_power_w_per_tb,"active","the higher of [B12]'s two figures; drives only, no server overhead (our inference)"
+pending.satchel_on_ec2,"priced from AWS Pricing Calculator readings [P3] in ec2-ap-south-1.toml","EC2 (m7g.medium, m7g.large, c7g.large) and gp3 EBS prices in ap-south-1 come from #33 (Vyas). Do not invent them."
+pending.server_cost_2026,"not used","Only the 2019 Storage Pod figure exists [H3]. #25 (Parshv's hardware part) decides how to update it."
+pending.spares_fraction,"not used","No source. Propose in #25 and mark as an assumption."

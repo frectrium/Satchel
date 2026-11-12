@@ -1,0 +1,58 @@
+# Inputs from the parts of the on-prem estimate (#25) that onprem.toml doesn't
+# have yet. Where a value here and one in onprem.toml cover the same thing,
+# this file says which one the engine uses and why.
+
+[meta]
+accessed = "2026-11-12"
+
+# Hardware part (#25, docs/cost/on-prem/hardware.md).
+[hardware]
+# Storage Pod 6.0 with 12 TB drives, $0.032 per GB [H3]. Low case.
+server_usd_per_raw_tb_low = 32.0
+source_server_low = "H3"
+# Edgecore 7716-32X, 32 x 100GbE [H14].
+switch_usd = 7432.57
+switch_ports = 32
+source_switch = "H14"
+# One 32-port top-of-rack switch per rack with 16 uplinks, non-blocking leaf-spine (our inference).
+rack_uplinks = 16
+
+# Staff and amortization part (#25, docs/cost/on-prem/staff-amortization.md).
+[staff]
+# Engineers who run the storage software: about 8 to 10 [T9] (onprem.toml has the range).
+engineers_base = 9
+# US median, software developers, May 2025 [H16]. Used for the engineers;
+# onprem.toml's sysadmin salary [H11] is used for the technicians.
+engineer_salary_usd = 135980
+source_engineer_salary = "H16"
+# One to two qualified operators on site 24x7, per site [H17]. Two sites, as in the hardware part.
+technicians_on_site = { low = 1, base = 2 }
+sites = 2
+source_technicians = "H17"
+# 40 hours x 52 weeks (our calc).
+hours_per_fte = 2080
+# Wages and salaries are 70.0% of US private employer costs, June 2026 [H15].
+# Replaces onprem.toml's employer_overhead_multiplier of 1.0, which was a
+# placeholder "until a source exists".
+wage_share_of_cost = 0.700
+source_wage_share = "H15"
+
+[capital]
+# Dropbox's weighted-average discount rate on finance leases, 2025 [F3]. A
+# sourced low case under onprem.toml's WACC.
+dropbox_lease_rate = 0.053
+source_lease_rate = "F3"
+
+# Power, space and network part (#25, Guru). Until it lands, the engine uses
+# these choices from onprem.toml's references.
+[defaults_pending_guru]
+# Drive power while serving random reads, the higher of [B12]'s two figures.
+drive_w_per_tb = "active"
+# North America PUE [H6], US industrial power [H4], Northern Virginia colocation
+# at the midpoint of $160 to $185 per kW-month [H7], 400 GigE transit [H9].
+pue = "north_america"
+usd_per_kwh = "us_industrial"
+colo_usd_per_kw_month = 172.5
+transit = "transit_400g_median_usd_per_mbps_month"
+# Transit is priced on average egress. A peak factor has no source yet (our inference).
+transit_peak_factor = 1.0

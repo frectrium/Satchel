@@ -1,0 +1,21 @@
+scenario,what,aws_total_usd,azure_total_usd,on_prem_total_usd,break_even_vs_aws_pb,break_even_vs_azure_pb
+base,"workload model base case (#15)",819023324.75,819754502.39,166707704.23,15.49,15.38
+growth_minus_50,"growth 10% a year",572705971.16,573009874.78,130407674.43,22.38,22.35
+growth_plus_50,"growth 30% a year",1139287077.83,1140614334.38,213099971.25,11.04,11.03
+growth_high,"growth 41% a year (#15, row 3)",1597286051.61,1599518737.96,278282671.73,7.88,7.86
+egress_minus_50,"egress 1x ingest",762714874.38,763432657.14,166526478.05,16.86,16.84
+egress_plus_50,"egress 3x ingest",875331775.13,876076347.65,166888930.41,14.26,14.25
+egress_5x,"egress 5x ingest (#15, row 9)",987948675.88,988720038.16,167251382.77,12.45,12.44
+block_1mb,"1 MB average block (#15, row 5)",824326705.02,825782322.42,166707704.23,15.31,15.28
+block_4mb,"4 MB average block (#15, row 5)",816371634.62,816740592.38,166707704.23,15.53,15.52
+two_regions,"a second cloud region, as Magic Pocket keeps two copies (#15)",1584990385.24,1582260894.84,166707704.23,7.49,7.50
+server_low,"server at $32 per raw TB [H3]",819023324.75,819754502.39,156275027.31,15.20,15.19
+server_double,"server at twice the 2019 price (our inference: drives alone now cost 80% to 126% of it [H2][H3])",819023324.75,819754502.39,288422268.31,18.99,18.97
+life_4,"4-year hardware life [F2]",819023324.75,819754502.39,191232996.14,15.97,15.95
+life_6,"6-year hardware life [H13]",819023324.75,819754502.39,150465413.12,15.08,15.07
+capital_low,"5.3% cost of capital, Dropbox's lease rate [F3]",819023324.75,819754502.39,154128825.69,15.16,15.14
+capital_high,"10.66% cost of capital, US Software (Internet) WACC [H18]",819023324.75,819754502.39,170934829.04,15.56,15.55
+staff_low,"8 engineers and 1 technician on site [T9][H17]",819023324.75,819754502.39,159772278.41,10.52,10.51
+power_idle,"drives at their idle 0.30 W per TB [B12]",819023324.75,819754502.39,157737163.68,15.23,15.22
+power_rack_budget,"every rack at its 15 kW budget [B14], an upper bound",819023324.75,819754502.39,170775491.12,15.72,15.70
+cold_tier_on_prem,"Magic Pocket's 2.25x cold tier on-prem [B5][T9]",819023324.75,819754502.39,130357805.64,15.53,15.52
