@@ -67,6 +67,8 @@ services:
       # Pocket Watch scrubs every 1 to 2 weeks [B3]. The lab cluster is small,
       # so once a minute keeps the failure tests short.
       SATCHEL_VERIFY_EVERY_SECS: "60"
+      # 15 minutes in Magic Pocket [B2]. 30 s in tests and experiments (DDL-010).
+      SATCHEL_REPAIR_AFTER: 30s
     ports: ["8085:8085"]
     depends_on: [index, node-z1, node-z2, node-z3]
 

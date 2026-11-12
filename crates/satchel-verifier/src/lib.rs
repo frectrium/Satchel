@@ -1,9 +1,11 @@
 //! Satchel verifier (#72): runs the Disk Scrubber and Metadata Scanner on a
-//! loop and reports what it finds.
+//! loop and reports what it finds. The same process repairs failed nodes
+//! (#71), as part of the Master's duties (DDL-009).
 //!
 //! Magic Pocket counterpart: Pocket Watch [B3]. Decision Log: DDL-012.
 
 pub mod clients;
+pub mod repair;
 pub mod scan;
 
 use std::collections::BTreeMap;
@@ -132,4 +134,15 @@ pub fn router(verifier: Arc<Verifier>) -> Router {
             post(|State(v): State<Arc<Verifier>>| async move { Json(v.run_once().await) }),
         )
         .with_state(verifier)
+}
+
+/// `GET /repairs`: repairs started, finished and failed, bytes repaired,
+/// nodes that are down now and every repair so far.
+pub fn repair_router(repairer: Arc<repair::Repairer>) -> Router {
+    Router::new()
+        .route(
+            "/repairs",
+            get(|State(r): State<Arc<repair::Repairer>>| async move { Json(r.stats().await) }),
+        )
+        .with_state(repairer)
 }
