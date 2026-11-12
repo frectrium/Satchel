@@ -101,6 +101,8 @@ curl localhost:8080/health
 | `index` | 8081 | none |
 | `verifier` | 8085 | none |
 | `node-z1` / `node-z2` / `node-z3` | 8091 / 8092 / 8093 | z1 / z2 / z3 |
+| `prometheus` | 9090 | none |
+| `grafana` | 3000 | none |
 
 You can also run a single service without Docker:
 
@@ -108,7 +110,18 @@ You can also run a single service without Docker:
 SATCHEL_PORT=8090 SATCHEL_ZONE=z1 cargo run -p satchel-node
 ```
 
-> The services are skeletons that only serve `GET /health` for now. See [Status](#status).
+> The services are skeletons that only serve `GET /health` and `GET /metrics` for now. See [Status](#status).
+
+### Metrics and dashboards
+
+Every service serves Prometheus metrics on `GET /metrics`: request counts and latency histograms by route and status, CPU and memory, and bytes stored on each storage node. Prometheus scrapes them every 5 seconds, and Grafana opens on the **Satchel overview** dashboard:
+
+```bash
+open http://localhost:3000   # Grafana, no login needed to view
+open http://localhost:9090   # Prometheus
+```
+
+The config is in [`observability/`](observability/). When the cluster grows, add the new nodes to `observability/prometheus.yml`.
 
 ### Run the integration tests
 
@@ -140,6 +153,7 @@ Satchel/
 ├── docs/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
+├── observability/          # Prometheus config, Grafana provisioning and dashboards
 ├── scripts/                # integration-test.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS
 ├── Dockerfile              # One image, all binaries

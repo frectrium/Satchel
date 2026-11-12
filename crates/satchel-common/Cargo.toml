@@ -11,11 +11,15 @@ repository.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 hex.workspace = true
+prometheus.workspace = true
 serde.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
 
 [lints]
 workspace = true
