@@ -66,16 +66,17 @@ fn internal(e: impl std::fmt::Display) -> Response {
     error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
 
-/// Runs a store call off the async workers, since SQLite blocks.
+/// Runs a store call off the async workers, since SQLite blocks. The error
+/// is the message for a 500.
 async fn blocking<T: Send + 'static>(
     store: &AppState,
     f: impl FnOnce(&Store) -> rusqlite::Result<T> + Send + 'static,
-) -> Result<T, Response> {
+) -> Result<T, String> {
     let store = store.clone();
     tokio::task::spawn_blocking(move || f(&store))
         .await
-        .map_err(internal)?
-        .map_err(internal)
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 fn bad_hash() -> Response {
@@ -92,7 +93,7 @@ async fn get_block(State(s): State<AppState>, Path(raw): Path<String>) -> Respon
     match blocking(&s, move |st| st.get_block(&hash)).await {
         Ok(Some(e)) => Json(e).into_response(),
         Ok(None) => error(StatusCode::NOT_FOUND, "no such block"),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -118,7 +119,7 @@ async fn put_block(
             StatusCode::CONFLICT,
             format!("volume {} is not open", entry.volume),
         ),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -129,7 +130,7 @@ async fn delete_block(State(s): State<AppState>, Path(raw): Path<String>) -> Res
     match blocking(&s, move |st| st.delete_block(&hash)).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => error(StatusCode::NOT_FOUND, "no such block"),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -147,7 +148,7 @@ async fn list_blocks(
                 .collect::<Vec<_>>(),
         )
         .into_response(),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -161,7 +162,7 @@ async fn create_volume(State(s): State<AppState>, Json(body): Json<NewVolume>) -
     }
     match blocking(&s, move |st| st.create_volume(&body.nodes)).await {
         Ok(v) => (StatusCode::CREATED, Json(v)).into_response(),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -169,7 +170,7 @@ async fn get_volume(State(s): State<AppState>, Path(id): Path<u64>) -> Response 
     match blocking(&s, move |st| st.get_volume(id)).await {
         Ok(Some(v)) => Json(v).into_response(),
         Ok(None) => error(StatusCode::NOT_FOUND, "no such volume"),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -190,7 +191,7 @@ async fn list_volumes(
     };
     match blocking(&s, move |st| st.volumes(state)).await {
         Ok(v) => Json(v).into_response(),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
 
@@ -216,6 +217,6 @@ async fn update_volume(
             }),
         )
             .into_response(),
-        Err(r) => r,
+        Err(e) => internal(e),
     }
 }
