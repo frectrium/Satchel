@@ -70,6 +70,7 @@ Uptime's main 2025 survey report, which is not in the Source Log yet, says avera
 | IP transit, 400 GigE, weighted median in key US and European cities | $0.08 | per Mbps per month | 2026 | [H9] |
 | IP transit trend, Mumbai, 100 GigE | down 35% a year, compounded, 2023 to 2026 | | | [H9] |
 | Cross-connect, Equinix DC3 Ashburn, single-mode fibre pair | $1,000 setup + $375 per month | per cross-connect | valid at 2026-07-16 | [H10] |
+| Switch, Edgecore 7716-32X, 32 x 100GbE, new | $7,432.57 | per switch | listed 2026-11-12 | [H14] |
 
 ## 5. Staff
 
@@ -99,5 +100,6 @@ Dropbox's own depreciation periods for servers should come from its filings (#4)
 - **Indian colocation figures come from a provider's own article** [H8]. It is undated and gives ranges. Look for an analyst report (JLL, CBRE India, Cushman and Wakefield) with Mumbai rates per kW.
 - **IP transit prices for Mumbai are not given as a number,** only as a rate of decline [H9]. City medians are only in a chart.
 - **Cross-connect price is from a reseller,** for one US facility [H10]. Indian cross-connect pricing is still missing.
+- **Switch price is one reseller listing** [H14]. It doesn't say what's included. Other 100GbE switch listings we found (CDW, Wamatek) blocked automated reads, and storage server listings only gave "price on request" (checked 2026-11-12), so the server cost still comes from [H3].
 - **Staff figures are not storage-specific.** BLS has no "storage engineer" or "SRE" category, so the closest one is used [H11]. The Indian figure is self-reported [H12].
 - **Amortization reference is Amazon's,** a hyperscaler with its own accounting choices [H13]. Dropbox's choice may differ.
