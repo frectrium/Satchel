@@ -5,6 +5,7 @@
 //! Magic Pocket counterpart: Pocket Watch [B3]. Decision Log: DDL-012.
 
 pub mod clients;
+pub mod master;
 pub mod repair;
 pub mod scan;
 

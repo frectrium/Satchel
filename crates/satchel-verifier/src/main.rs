@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use satchel_common::service::{self, ServiceConfig};
 use satchel_verifier::repair::{self, RepairConfig, Repairer};
+use satchel_verifier::master::{Master, MasterConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -36,5 +37,15 @@ async fn main() -> anyhow::Result<()> {
     let app = service::health_router(&config)
         .merge(satchel_verifier::router(verifier))
         .merge(satchel_verifier::repair_router(repairer));
+    let master = Master::new(MasterConfig::from_env()?);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            if let Err(error) = master.reconcile().await {
+                tracing::warn!(%error, "master reconciliation failed");
+            }
+        }
+    });
     service::serve(&config, app).await
 }
