@@ -8,6 +8,8 @@ use satchel_common::service::{self, ServiceConfig};
 async fn main() -> anyhow::Result<()> {
     service::init_tracing();
     let config = ServiceConfig::from_env("satchel-api", 8080)?;
-    let app = service::health_router(&config);
+    let api = satchel_api::Config::from_env()?;
+    tracing::info!(index = %api.index_url, nodes = api.nodes.len(), "frontend config");
+    let app = service::health_router(&config).merge(satchel_api::router(api));
     service::serve(&config, app).await
 }

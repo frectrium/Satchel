@@ -12,6 +12,7 @@ anyhow.workspace = true
 axum.workspace = true
 hex.workspace = true
 prometheus.workspace = true
+reed-solomon-erasure.workspace = true
 serde.workspace = true
 sha2.workspace = true
 tokio.workspace = true
@@ -20,6 +21,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tower.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
