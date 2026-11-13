@@ -71,6 +71,10 @@ pub struct Volume {
     pub kind: VolumeKind,
     /// Bumped by every committed change (DDL-010).
     pub generation: u64,
+    /// Unix timestamp at which the Master opened this volume. It is persisted
+    /// with the replication table so age-based closing survives a restart.
+    #[serde(default)]
+    pub opened_at_secs: u64,
     /// Node ids in placement order: replicas, or fragments 0 to 8.
     pub nodes: Vec<String>,
     /// End of the last block written.

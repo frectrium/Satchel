@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS volumes (
     state      TEXT    NOT NULL CHECK (state IN ('open', 'closed')),
     kind       TEXT    NOT NULL CHECK (kind IN ('replicated', 'rs63')),
     generation INTEGER NOT NULL,
+    opened_at INTEGER NOT NULL DEFAULT 0,
     nodes      TEXT    NOT NULL,
     size       INTEGER NOT NULL
 );
@@ -88,18 +89,19 @@ fn volume_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Volume> {
         "rs63" => VolumeKind::Rs63,
         _ => return Err(bad(2, "kind")),
     };
-    let nodes: String = row.get(4)?;
+    let nodes: String = row.get(5)?;
     Ok(Volume {
         id: row.get(0)?,
         state,
         kind,
         generation: row.get(3)?,
-        nodes: serde_json::from_str(&nodes).map_err(|_| bad(4, "nodes"))?,
-        size: row.get(5)?,
+        opened_at_secs: row.get(4)?,
+        nodes: serde_json::from_str(&nodes).map_err(|_| bad(5, "nodes"))?,
+        size: row.get(6)?,
     })
 }
 
-const VOLUME_COLUMNS: &str = "id, state, kind, generation, nodes, size";
+const VOLUME_COLUMNS: &str = "id, state, kind, generation, opened_at, nodes, size";
 
 impl Store {
     /// Opens or creates the database at `path`. Writes are synced to disk
@@ -117,6 +119,18 @@ impl Store {
         conn.pragma_update(None, "synchronous", "FULL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(SCHEMA)?;
+        let has_opened_at = conn
+            .prepare("PRAGMA table_info(volumes)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .iter()
+            .any(|name| name == "opened_at");
+        if !has_opened_at {
+            conn.execute(
+                "ALTER TABLE volumes ADD COLUMN opened_at INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -228,9 +242,13 @@ impl Store {
     /// Opens a new replicated volume on `nodes`, generation 1.
     pub fn create_volume(&self, nodes: &[String]) -> rusqlite::Result<Volume> {
         let conn = self.conn();
+        let opened_at_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_secs();
         conn.execute(
-            "INSERT INTO volumes (state, kind, generation, nodes, size) VALUES ('open', 'replicated', 1, ?1, 0)",
-            [serde_json::to_string(nodes).expect("node list is JSON")],
+            "INSERT INTO volumes (state, kind, generation, opened_at, nodes, size) VALUES ('open', 'replicated', 1, ?1, ?2, 0)",
+            params![opened_at_secs, serde_json::to_string(nodes).expect("node list is JSON")],
         )?;
         let id = conn.last_insert_rowid() as u64;
         Ok(Volume {
@@ -238,6 +256,7 @@ impl Store {
             state: VolumeState::Open,
             kind: VolumeKind::Replicated,
             generation: 1,
+            opened_at_secs,
             nodes: nodes.to_vec(),
             size: 0,
         })

@@ -204,6 +204,8 @@ fn ts_svc_3_all_services_export_metrics() {
             }
         },
     );
+}
+
 /// Sends `body` as JSON and returns the status and JSON reply.
 fn send_json(agent: &ureq::Agent, method: &str, url: &str, body: &Value) -> (u16, Value) {
     let request = match method {
