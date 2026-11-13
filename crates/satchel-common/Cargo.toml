@@ -20,6 +20,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tower.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
