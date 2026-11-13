@@ -1,0 +1,34 @@
+# Add one storage node per zone. Start with:
+# docker compose -f docker-compose.yml -f docker-compose.12.yml up --build
+services:
+  api:
+    environment:
+      SATCHEL_NODES: &nodes node-z1-1@z1=http://node-z1-1:8090,node-z1-2@z1=http://node-z1-2:8090,node-z1-3@z1=http://node-z1-3:8090,node-z1-4@z1=http://node-z1-4:8090,node-z2-1@z2=http://node-z2-1:8090,node-z2-2@z2=http://node-z2-2:8090,node-z2-3@z2=http://node-z2-3:8090,node-z2-4@z2=http://node-z2-4:8090,node-z3-1@z3=http://node-z3-1:8090,node-z3-2@z3=http://node-z3-2:8090,node-z3-3@z3=http://node-z3-3:8090,node-z3-4@z3=http://node-z3-4:8090
+  verifier:
+    environment:
+      SATCHEL_NODES: *nodes
+  prometheus:
+    volumes:
+      - ./observability/prometheus-12.yml:/etc/prometheus/prometheus.yml:ro
+  node-z1-4:
+    image: satchel:dev
+    command: satchel-node
+    environment: { RUST_LOG: "${RUST_LOG:-info}", SATCHEL_PORT: "8090", SATCHEL_ZONE: z1 }
+    ports: ["8101:8090"]
+    volumes: ["node-z1-4:/data"]
+  node-z2-4:
+    image: satchel:dev
+    command: satchel-node
+    environment: { RUST_LOG: "${RUST_LOG:-info}", SATCHEL_PORT: "8090", SATCHEL_ZONE: z2 }
+    ports: ["8102:8090"]
+    volumes: ["node-z2-4:/data"]
+  node-z3-4:
+    image: satchel:dev
+    command: satchel-node
+    environment: { RUST_LOG: "${RUST_LOG:-info}", SATCHEL_PORT: "8090", SATCHEL_ZONE: z3 }
+    ports: ["8103:8090"]
+    volumes: ["node-z3-4:/data"]
+volumes:
+  node-z1-4:
+  node-z2-4:
+  node-z3-4:
