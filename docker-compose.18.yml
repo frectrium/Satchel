@@ -1,0 +1,31 @@
+# Add three storage nodes per zone. It includes the 12-node additions, so use
+# this file directly with docker-compose.yml rather than layering .12 as well.
+services:
+  api:
+    environment:
+      SATCHEL_NODES: &nodes node-z1-1@z1=http://node-z1-1:8090,node-z1-2@z1=http://node-z1-2:8090,node-z1-3@z1=http://node-z1-3:8090,node-z1-4@z1=http://node-z1-4:8090,node-z1-5@z1=http://node-z1-5:8090,node-z1-6@z1=http://node-z1-6:8090,node-z2-1@z2=http://node-z2-1:8090,node-z2-2@z2=http://node-z2-2:8090,node-z2-3@z2=http://node-z2-3:8090,node-z2-4@z2=http://node-z2-4:8090,node-z2-5@z2=http://node-z2-5:8090,node-z2-6@z2=http://node-z2-6:8090,node-z3-1@z3=http://node-z3-1:8090,node-z3-2@z3=http://node-z3-2:8090,node-z3-3@z3=http://node-z3-3:8090,node-z3-4@z3=http://node-z3-4:8090,node-z3-5@z3=http://node-z3-5:8090,node-z3-6@z3=http://node-z3-6:8090
+  verifier:
+    environment:
+      SATCHEL_NODES: *nodes
+  prometheus:
+    volumes:
+      - ./observability/prometheus-18.yml:/etc/prometheus/prometheus.yml:ro
+  node-z1-4: &node-z1-4 { image: satchel:dev, command: satchel-node, environment: { RUST_LOG: "${RUST_LOG:-info}", SATCHEL_PORT: "8090", SATCHEL_ZONE: z1 }, ports: ["8101:8090"], volumes: ["node-z1-4:/data"] }
+  node-z1-5: { <<: *node-z1-4, ports: ["8104:8090"], volumes: ["node-z1-5:/data"] }
+  node-z1-6: { <<: *node-z1-4, ports: ["8105:8090"], volumes: ["node-z1-6:/data"] }
+  node-z2-4: &node-z2-4 { image: satchel:dev, command: satchel-node, environment: { RUST_LOG: "${RUST_LOG:-info}", SATCHEL_PORT: "8090", SATCHEL_ZONE: z2 }, ports: ["8102:8090"], volumes: ["node-z2-4:/data"] }
+  node-z2-5: { <<: *node-z2-4, ports: ["8106:8090"], volumes: ["node-z2-5:/data"] }
+  node-z2-6: { <<: *node-z2-4, ports: ["8107:8090"], volumes: ["node-z2-6:/data"] }
+  node-z3-4: &node-z3-4 { image: satchel:dev, command: satchel-node, environment: { RUST_LOG: "${RUST_LOG:-info}", SATCHEL_PORT: "8090", SATCHEL_ZONE: z3 }, ports: ["8103:8090"], volumes: ["node-z3-4:/data"] }
+  node-z3-5: { <<: *node-z3-4, ports: ["8108:8090"], volumes: ["node-z3-5:/data"] }
+  node-z3-6: { <<: *node-z3-4, ports: ["8109:8090"], volumes: ["node-z3-6:/data"] }
+volumes:
+  node-z1-4: {}
+  node-z1-5: {}
+  node-z1-6: {}
+  node-z2-4: {}
+  node-z2-5: {}
+  node-z2-6: {}
+  node-z3-4: {}
+  node-z3-5: {}
+  node-z3-6: {}

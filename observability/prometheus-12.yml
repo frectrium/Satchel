@@ -1,0 +1,16 @@
+global: { scrape_interval: 5s, evaluation_interval: 5s }
+scrape_configs:
+  - job_name: satchel
+    static_configs:
+      - targets: ["api:8080"]
+        labels: { service: api }
+      - targets: ["index:8081"]
+        labels: { service: index }
+      - targets: ["verifier:8085"]
+        labels: { service: verifier }
+      - targets: ["node-z1-1:8090", "node-z1-2:8090", "node-z1-3:8090", "node-z1-4:8090"]
+        labels: { service: node, zone: z1 }
+      - targets: ["node-z2-1:8090", "node-z2-2:8090", "node-z2-3:8090", "node-z2-4:8090"]
+        labels: { service: node, zone: z2 }
+      - targets: ["node-z3-1:8090", "node-z3-2:8090", "node-z3-3:8090", "node-z3-4:8090"]
+        labels: { service: node, zone: z3 }
