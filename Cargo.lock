@@ -775,8 +775,14 @@ name = "satchel-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "hex",
  "satchel-common",
+ "serde",
+ "serde_json",
  "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

@@ -23,9 +23,9 @@ services:
   api:
     <<: *satchel
     command: satchel-api
-    environment: { <<: *env, SATCHEL_PORT: "8080" }
+    environment: { <<: *env, SATCHEL_PORT: "8080", SATCHEL_INDEX_URL: "http://index:8081", SATCHEL_NODES: &nodes "node-z1-1@z1=http://node-z1-1:8090,node-z1-2@z1=http://node-z1-2:8090,node-z1-3@z1=http://node-z1-3:8090,node-z2-1@z2=http://node-z2-1:8090,node-z2-2@z2=http://node-z2-2:8090,node-z2-3@z2=http://node-z2-3:8090,node-z3-1@z3=http://node-z3-1:8090,node-z3-2@z3=http://node-z3-2:8090,node-z3-3@z3=http://node-z3-3:8090" }
     ports: ["8080:8080"]
-    depends_on: [index, node-z1, node-z2, node-z3]
+    depends_on: [index, node-z1-1, node-z1-2, node-z1-3, node-z2-1, node-z2-2, node-z2-3, node-z3-1, node-z3-2, node-z3-3]
 
   index:
     <<: *satchel
@@ -33,31 +33,73 @@ services:
     environment: { <<: *env, SATCHEL_PORT: "8081" }
     ports: ["8081:8081"]
 
-  node-z1:
+  node-z1-1:
     <<: *satchel
     command: satchel-node
     environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z1 }
     ports: ["8091:8090"]
-    volumes: ["node-z1:/data"]
+    volumes: ["node-z1-1:/data"]
 
-  node-z2:
+  node-z1-2:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z1 }
+    ports: ["8092:8090"]
+    volumes: ["node-z1-2:/data"]
+
+  node-z1-3:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z1 }
+    ports: ["8093:8090"]
+    volumes: ["node-z1-3:/data"]
+
+  node-z2-1:
     <<: *satchel
     command: satchel-node
     environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z2 }
-    ports: ["8092:8090"]
-    volumes: ["node-z2:/data"]
+    ports: ["8094:8090"]
+    volumes: ["node-z2-1:/data"]
 
-  node-z3:
+  node-z2-2:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z2 }
+    ports: ["8095:8090"]
+    volumes: ["node-z2-2:/data"]
+
+  node-z2-3:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z2 }
+    ports: ["8096:8090"]
+    volumes: ["node-z2-3:/data"]
+
+  node-z3-1:
     <<: *satchel
     command: satchel-node
     environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z3 }
-    ports: ["8093:8090"]
-    volumes: ["node-z3:/data"]
+    ports: ["8097:8090"]
+    volumes: ["node-z3-1:/data"]
+
+  node-z3-2:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z3 }
+    ports: ["8098:8090"]
+    volumes: ["node-z3-2:/data"]
+
+  node-z3-3:
+    <<: *satchel
+    command: satchel-node
+    environment: { <<: *env, SATCHEL_PORT: "8090", SATCHEL_ZONE: z3 }
+    ports: ["8099:8090"]
+    volumes: ["node-z3-3:/data"]
 
   verifier:
     <<: *satchel
     command: satchel-verifier
-    environment: { <<: *env, SATCHEL_PORT: "8085" }
+    environment: { <<: *env, SATCHEL_PORT: "8085", SATCHEL_INDEX_URL: "http://index:8081", SATCHEL_NODES: *nodes }
     ports: ["8085:8085"]
     depends_on: [index]
 
@@ -85,7 +127,13 @@ services:
     depends_on: [prometheus]
 
 volumes:
-  node-z1:
-  node-z2:
-  node-z3:
+  node-z1-1:
+  node-z1-2:
+  node-z1-3:
+  node-z2-1:
+  node-z2-2:
+  node-z2-3:
+  node-z3-1:
+  node-z3-2:
+  node-z3-3:
   prometheus:

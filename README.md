@@ -100,7 +100,7 @@ curl localhost:8080/health
 | `api` | 8080 | none |
 | `index` | 8081 | none |
 | `verifier` | 8085 | none |
-| `node-z1` / `node-z2` / `node-z3` | 8091 / 8092 / 8093 | z1 / z2 / z3 |
+| `node-z1-1` through `node-z3-3` | 8091 through 8099 | three nodes in each of z1, z2, z3 |
 | `prometheus` | 9090 | none |
 | `grafana` | 3000 | none |
 
@@ -110,7 +110,7 @@ You can also run a single service without Docker:
 SATCHEL_PORT=8090 SATCHEL_ZONE=z1 cargo run -p satchel-node
 ```
 
-> The services are skeletons that only serve `GET /health` and `GET /metrics` for now. See [Status](#status).
+> Storage nodes persist replicas and fragments under `/data`; use `SATCHEL_DATA_DIR` to select another directory outside Compose. See [Status](#status).
 
 ### Metrics and dashboards
 

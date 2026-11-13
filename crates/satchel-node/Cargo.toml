@@ -13,8 +13,16 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
+hex.workspace = true
+serde.workspace = true
 satchel-common.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tower.workspace = true
 
 [lints]
 workspace = true
