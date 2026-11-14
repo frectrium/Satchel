@@ -136,20 +136,44 @@ impl Master {
     }
 
     async fn close(&self, volume: &Volume, healthy: &[NodeAddr]) -> anyhow::Result<()> {
-        let mut next = volume.clone();
-        next.state = VolumeState::Closed;
-        next.generation += 1;
+        let mut closed = volume.clone();
+        closed.state = VolumeState::Closed;
+        closed.generation += 1;
+        self.update_volume(&closed).await?;
+
         if self.config.encode && volume.size > 0 {
-            let fragments = self.encode(volume, healthy).await?;
-            next.kind = VolumeKind::Rs63;
-            next.nodes = fragments;
+            let fragments = self.encode(&closed, healthy).await?;
+            let mut coded = closed.clone();
+            coded.kind = VolumeKind::Rs63;
+            coded.nodes = fragments;
+            coded.generation += 1;
+            self.update_volume(&coded).await?;
+            self.delete_replicas(&closed, healthy).await?;
         }
+        Ok(())
+    }
+
+    async fn update_volume(&self, volume: &Volume) -> anyhow::Result<()> {
         self.http
             .put(format!("{}/volumes/{}", self.config.index_url, volume.id))
-            .json(&next)
+            .json(volume)
             .send()
             .await?
             .error_for_status()?;
+        Ok(())
+    }
+
+    async fn delete_replicas(&self, volume: &Volume, healthy: &[NodeAddr]) -> anyhow::Result<()> {
+        for node in healthy
+            .iter()
+            .filter(|node| volume.nodes.iter().any(|id| id == &node.id))
+        {
+            self.http
+                .delete(format!("{}/extents/{}", node.url, volume.id))
+                .send()
+                .await?
+                .error_for_status()?;
+        }
         Ok(())
     }
 
@@ -191,16 +215,38 @@ impl Master {
     }
 }
 
-/// Selects one node per zone. With an unavailable zone, this intentionally
-/// opens a smaller replica set instead of placing two replicas in one zone.
+/// Selects three replicas across at least two zones. When a zone is down, the
+/// third replica shares a surviving zone so writes continue with three copies.
 pub fn replica_placement(nodes: &[NodeAddr]) -> Vec<NodeAddr> {
-    let mut by_zone = BTreeMap::new();
+    let mut by_zone: BTreeMap<String, Vec<NodeAddr>> = BTreeMap::new();
     for node in nodes {
         by_zone
             .entry(node.zone.clone())
-            .or_insert_with(|| node.clone());
+            .or_default()
+            .push(node.clone());
     }
-    by_zone.into_values().take(3).collect()
+    if by_zone.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut placement: Vec<NodeAddr> = by_zone
+        .values()
+        .filter_map(|members| members.first().cloned())
+        .take(3)
+        .collect();
+    for members in by_zone.values() {
+        for node in members.iter().skip(1) {
+            if placement.len() == 3 {
+                return placement;
+            }
+            placement.push(node.clone());
+        }
+    }
+    if placement.len() == 3 {
+        placement
+    } else {
+        Vec::new()
+    }
 }
 
 /// Selects three distinct nodes per zone for RS(6,3), or no placement unless
@@ -226,8 +272,73 @@ pub fn fragment_placement(nodes: &[NodeAddr]) -> Vec<NodeAddr> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use axum::routing::{get, put};
+    use axum::{Json, Router};
+
+    #[derive(Default)]
+    struct CloseState {
+        events: Mutex<Vec<String>>,
+        updates: Mutex<Vec<Volume>>,
+    }
+
+    async fn health() -> StatusCode {
+        StatusCode::OK
+    }
+
+    async fn read_replica() -> &'static [u8] {
+        b"abc"
+    }
+
+    async fn write_fragment(State(state): State<Arc<CloseState>>) -> StatusCode {
+        state.events.lock().unwrap().push("fragment".into());
+        StatusCode::CREATED
+    }
+
+    async fn delete_replica(State(state): State<Arc<CloseState>>) -> StatusCode {
+        state.events.lock().unwrap().push("delete".into());
+        StatusCode::NO_CONTENT
+    }
+
+    async fn update_volume(
+        State(state): State<Arc<CloseState>>,
+        Json(volume): Json<Volume>,
+    ) -> StatusCode {
+        state.events.lock().unwrap().push(format!(
+            "volume:{}:{}",
+            volume.generation,
+            match volume.kind {
+                VolumeKind::Replicated => "replicated",
+                VolumeKind::Rs63 => "rs63",
+            }
+        ));
+        state.updates.lock().unwrap().push(volume);
+        StatusCode::OK
+    }
+
+    async fn close_server() -> (String, Arc<CloseState>) {
+        let state = Arc::new(CloseState::default());
+        let app = Router::new()
+            .route("/health", get(health))
+            .route(
+                "/extents/{volume}",
+                get(read_replica).delete(delete_replica),
+            )
+            .route(
+                "/extents/{volume}/fragments/{fragment}",
+                put(write_fragment),
+            )
+            .route("/volumes/{volume}", put(update_volume))
+            .with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{address}"), state)
+    }
 
     fn nodes() -> Vec<NodeAddr> {
         ["z1", "z2", "z3"]
@@ -243,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn replica_placement_never_duplicates_a_zone() {
+    fn replica_placement_uses_one_node_per_zone_when_all_zones_are_healthy() {
         let placement = replica_placement(&nodes());
         assert_eq!(placement.len(), 3);
         assert_eq!(
@@ -254,6 +365,95 @@ mod tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn replica_placement_keeps_three_replicas_when_a_zone_is_down() {
+        let healthy: Vec<_> = nodes()
+            .into_iter()
+            .filter(|node| node.zone != "z3")
+            .collect();
+        let placement = replica_placement(&healthy);
+
+        assert_eq!(placement.len(), 3);
+        assert_eq!(
+            placement
+                .iter()
+                .map(|node| &node.zone)
+                .collect::<HashSet<_>>()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn replica_placement_requires_two_healthy_zones() {
+        let healthy: Vec<_> = nodes()
+            .into_iter()
+            .filter(|node| node.zone == "z1")
+            .collect();
+        assert!(replica_placement(&healthy).is_empty());
+    }
+
+    #[tokio::test]
+    async fn closing_commits_coded_layout_before_removing_replicas() {
+        let (url, state) = close_server().await;
+        let nodes: Vec<_> = ["z1", "z2", "z3"]
+            .into_iter()
+            .flat_map(|zone| {
+                let url = url.clone();
+                (1..=3).map(move |number| NodeAddr {
+                    id: format!("node-{zone}-{number}"),
+                    zone: zone.into(),
+                    url: url.clone(),
+                })
+            })
+            .collect();
+        let master = Master::new(MasterConfig {
+            index_url: url,
+            nodes: nodes.clone(),
+            close_bytes: 1,
+            close_after: Duration::ZERO,
+            encode: true,
+        });
+        let volume = Volume {
+            id: 7,
+            state: VolumeState::Open,
+            kind: VolumeKind::Replicated,
+            generation: 1,
+            opened_at_secs: 0,
+            nodes: ["node-z1-1", "node-z2-1", "node-z3-1"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            size: 3,
+        };
+
+        master.close(&volume, &nodes).await.unwrap();
+
+        let updates = state.updates.lock().unwrap().clone();
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].state, VolumeState::Closed);
+        assert_eq!(updates[0].kind, VolumeKind::Replicated);
+        assert_eq!(updates[0].generation, 2);
+        assert_eq!(updates[1].kind, VolumeKind::Rs63);
+        assert_eq!(updates[1].generation, 3);
+
+        let events = state.events.lock().unwrap();
+        let close = events
+            .iter()
+            .position(|event| event == "volume:2:replicated")
+            .unwrap();
+        let first_fragment = events.iter().position(|event| event == "fragment").unwrap();
+        let coded = events
+            .iter()
+            .position(|event| event == "volume:3:rs63")
+            .unwrap();
+        let first_delete = events.iter().position(|event| event == "delete").unwrap();
+        assert!(close < first_fragment);
+        assert!(first_fragment < coded);
+        assert!(coded < first_delete);
+        assert_eq!(events.iter().filter(|event| *event == "delete").count(), 3);
     }
 
     #[test]
