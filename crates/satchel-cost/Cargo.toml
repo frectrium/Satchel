@@ -1,0 +1,21 @@
+[package]
+name = "satchel-cost"
+description = "Sizing and cost model for the Satchel workload on AWS, Azure and on-prem"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "satchel-cost"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+toml.workspace = true
+
+[lints]
+workspace = true

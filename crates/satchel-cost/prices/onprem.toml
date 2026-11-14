@@ -1,0 +1,110 @@
+# Price references for owning the storage, for the on-prem scenario and #25.
+# Every value carries a Source Log ID or is marked `assumption = true`.
+# Several inputs are ranges: `low`, `base`, `high`. The engine runs the base case and
+# reports the range as sensitivity.
+
+[meta]
+accessed = "2026-10-20"
+currency_note = "Mixed USD and INR; INR is converted once with [fx]"
+
+[fx]
+# RBI reference rate, 2026-11-03 [H19]. One rate for the whole model.
+inr_per_usd = 94.8606
+source = "H19"
+date = "2026-11-03"
+
+[hardware.hdd_usd_per_tb]
+# Enterprise drive lines, August 2026 [H2]. Base is the middle line (Toshiba MG).
+low = 27.92    # Seagate Exos SATA
+base = 30.64   # Toshiba MG
+high = 44.17   # WD Gold
+source = "H2"
+note = "Prices rose 15% to 48% between March and August 2026 [H2]"
+
+[hardware.server_with_drives_usd_per_pb]
+# Backblaze Storage Pod 6.0, about $35,000 per PB including drives, 2019 prices [H3].
+value = 35000
+source = "H3"
+year = 2019
+note = "Only full-server figure we have; drive prices have since changed [H2]"
+
+[hardware.drive_power_w_per_tb]
+# Dropbox's latest drives: about 0.30 W per TB idle, 0.50 W per TB on random reads [B12].
+idle = 0.30
+active = 0.50
+source = "B12"
+
+[hardware.rack]
+# Dropbox's rack power budget, 15 kW per rack [B14].
+kw_per_rack = 15
+source = "B14"
+
+[power.usd_per_kwh]
+# US average industrial price, July 2026 [H4]. Virginia industrial as an alternative.
+us_industrial = 0.0977
+virginia_industrial = 0.1007
+us_commercial = 0.1453
+source = "H4"
+
+[power.msedcl_ht_industry]
+# Maharashtra HT I(A) Industry, which covers data centres [H5].
+fy2025_26 = { inr_per_unit = 7.48, inr_per_kva_month = 555 }
+fy2026_27 = { inr_per_unit = 7.27, inr_per_kva_month = 560 }
+fy2027_28 = { inr_per_unit = 7.11, inr_per_kva_month = 565 }
+source = "H5"
+note = "Under review by MERC since March 2026; 'unit' not stated as kWh or kVAh [H5]"
+
+[power.pue]
+global = 1.54
+asia_pacific = 1.52
+north_america = 1.49
+source = "H6"
+
+[space.colo]
+# Northern Virginia wholesale, 10+ MW, USD per kW per month (per month is our inference) [H7].
+nova_usd_per_kw_month = { low = 160, high = 185 }
+# India, per rack per month plus power per kVA per month [H8].
+india_inr_per_rack_month = { low = 25000, high = 60000 }
+india_inr_per_kva_month = { low = 8000, high = 20000 }
+source_nova = "H7"
+source_india = "H8"
+
+[network]
+# IP transit, USD per Mbps per month [H9]. Cross-connect at one US facility [H10].
+transit_100g_lowest_usd_per_mbps_month = 0.03
+transit_10g_lowest_usd_per_mbps_month = 0.07
+transit_400g_median_usd_per_mbps_month = 0.08
+source_transit = "H9"
+cross_connect = { setup_usd = 1000, usd_per_month = 375 }
+source_cross_connect = "H10"
+
+[staff]
+# Base pay only; no employer overhead is sourced yet.
+us_sysadmin_median_usd_per_year = 99130     # [H11]
+india_sre_average_inr_per_year = 1748344    # [H12]
+source_us = "H11"
+source_india = "H12"
+# Dropbox ran its storage software with about 8 to 10 engineers in 2024 [T9];
+# most of Magic Pocket was built by fewer than six people [B2].
+storage_engineers = { low = 8, high = 10 }
+source_headcount = "T9"
+employer_overhead_multiplier = { value = 1.0, assumption = true, note = "No source yet: 1.0 means base pay only" }
+
+[amortization]
+# Hyperscaler server life [H13]; Dropbox moved from 3 to 4 years in 2018 [F2].
+server_years = { low = 4, base = 5, high = 6 }
+source_hyperscaler = "H13"
+source_dropbox = "F2"
+
+[capital]
+# Proposed: January 2026 WACC for US "Software (System & Application)" [H18].
+# Range: total market 6.96% to "Software (Internet)" 10.66% [H18].
+wacc = { low = 0.0696, base = 0.0934, high = 0.1066 }
+source = "H18"
+proposed = true
+
+# Values the engine needs that are not sourced yet. Keep them visible.
+[pending]
+satchel_on_ec2 = "EC2 (m7g.medium, m7g.large, c7g.large) and gp3 EBS prices in ap-south-1 come from #33 (Vyas). Do not invent them."
+spares_fraction = "No source. Propose in #25 and mark as an assumption."
+server_cost_2026 = "Only the 2019 Storage Pod figure exists [H3]. #25 (Parshv's hardware part) decides how to update it."
