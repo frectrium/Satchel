@@ -16,10 +16,11 @@ Issue #16. Who owns what in Satchel. The work is split equally across the three 
 |---|---|---|---|
 | 1 | #2 Tech blog sources, #8 Architecture notes, #30 Workflow docs, editor of #10 | #3 Talks, #4 S-1 data, #9 Case background | #5 Media, #6 Cloud pricing, #7 On-prem prices |
 | 2 | #11 Architecture diagram, #14 Exercise plan, #17 Design Decision Log, #19 Week 3 issues | #12 Problem, #13 Solution, #33 AWS groundwork, editor of #18 | #15 Workload model, #31 Test strategy, #32 Integration harness, editor of #16 |
-| 3 | #21 Observability, #22 Load generator and S3 baseline, #53 Sizing model | #20 Terraform, #34 Docker image, #35 First AWS deployment, editor of #37 | #23 AWS calculator, #24 Azure calculator, #26 Break-even, #52 Cost engine and CLI |
+| 3 | #21 Observability, #22 Load generator and S3 baseline, #53 Sizing model, #68 Frontend, #70 Erasure coding, #74 E1 latency, #77 E5 resource usage | #67 Storage node, #69 Master, #73 Horizontal scaling, #75 E2 scaling, editor of #37 | #23 AWS calculator, #24 Azure calculator, #26 Break-even, #52 Cost engine and CLI, #66 Block Index, #71 Repair, #72 Verifier, #76 E3 and E4 |
+| Before presentation | | #20 Terraform, #34 Docker image, #35 First AWS deployment, #62 AWS access and budget | |
 | 4 | #27 Fold Decision Log into the report | #36 Release v1.0, #54 Pricing calculator web UI | Editor of #28 |
 | 5 | Coordinator of #29 | | |
-| Count | 11 issues + 2 lead roles | 11 issues + 2 lead roles | 10 issues + 2 lead roles |
+| Count | 15 issues + 2 lead roles | 16 issues + 2 lead roles | 14 issues + 2 lead roles |
 
 **Shared by all three:**
 - #1 Local setup
@@ -30,8 +31,9 @@ Issue #16. Who owns what in Satchel. The work is split equally across the three 
 - #28 Final report
 - #29 Viva, with equal speaking time for all three
 - #37 Week 3 results
+- #63 Live AWS demo for the viva, and its milestone #64, led by Guru
 
-The build issues created in #19 will be added to the table above when they exist.
+The AWS work moved to the "Before presentation" milestone (#64): everything else runs on the local Compose cluster.
 
 ## 3. Report sections
 
@@ -77,16 +79,18 @@ Section owners are the owners of the linked issues, as #18 and #37 set out. A se
 
 ## 4. Satchel components
 
-The build issues come from the exercise plan (#14) through #19, so component owners are **to be agreed** when #19 creates them. This table is updated then.
+The build issues come from the exercise plan (#14) through #19.
 
 | Component | Magic Pocket counterpart | Owner |
 |---|---|---|
-| `satchel-api` | Frontends | To be agreed in #19 |
-| `satchel-index` | Block Index | To be agreed in #19 |
-| `satchel-node` | OSD | To be agreed in #19 |
-| Replication | Cross-zone replication | To be agreed in #19 |
-| Erasure coding | Erasure-coded volumes | To be agreed in #19 |
-| `satchel-verifier` | Pocket Watch | To be agreed in #19 |
+| `satchel-api`, including replicated writes | Frontends | Parshv (#68) |
+| `satchel-index` | Block Index and Replication Table | Jas (#66) |
+| `satchel-node` | OSD | Guru (#67) |
+| Master | Cell Master | Guru (#69) |
+| Erasure coding | Erasure-coded volumes | Parshv (#70) |
+| Repair | Repair after an OSD fails | Jas (#71) |
+| `satchel-verifier` | Pocket Watch | Jas (#72) |
+| Horizontal scaling | Adding capacity | Guru (#73) |
 | Integration test harness | Release testing with failure injection [B3] | Jas (#32) |
 | Terraform, Docker image and deployment | n/a (Dropbox ran its own data centers) | Guru (#20, #34, #35) |
 | Metrics and dashboards | n/a | Parshv (#21) |
