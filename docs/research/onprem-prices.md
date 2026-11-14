@@ -70,6 +70,7 @@ Uptime's main 2025 survey report, which is not in the Source Log yet, says avera
 | IP transit, 400 GigE, weighted median in key US and European cities | $0.08 | per Mbps per month | 2026 | [H9] |
 | IP transit trend, Mumbai, 100 GigE | down 35% a year, compounded, 2023 to 2026 | | | [H9] |
 | Cross-connect, Equinix DC3 Ashburn, single-mode fibre pair | $1,000 setup + $375 per month | per cross-connect | valid at 2026-07-16 | [H10] |
+| Switch, Edgecore 7716-32X, 32 x 100GbE, new | $7,432.57 | per switch | listed 2026-11-12 | [H14] |
 
 ## 5. Staff
 
@@ -77,8 +78,14 @@ Uptime's main 2025 survey report, which is not in the Source Log yet, says avera
 |---|---|---|---|---|
 | Network and computer systems administrator | US | $99,130 per year | Median annual wage, May 2025 | [H11] |
 | Site reliability engineer | India | Rs 17,48,344 per year (range Rs 4.05 lakh to Rs 30 lakh) | Average base salary, self-reported, 272 profiles | [H12] |
+| Software developer | US | $135,980 per year | Median annual wage, May 2025 | [H16] |
 
-Both figures are base pay only. The cost to the employer is higher once benefits, taxes and overhead are added, and we don't have a source for that multiplier yet.
+These figures are base pay only. US private employers spend 70.0% of compensation on wages and salaries and 30.0% on benefits (June 2026) [H15], so employer cost is about base pay / 0.70 *(our calc)*.
+
+| Staffing figure | Value | Source |
+|---|---|---|
+| Engineers operating Magic Pocket's storage software, 2024 | about 8 to 10 | [T9] |
+| Qualified operators on site, Tier III or IV facility | at least one to two, 24 hours a day, 7 days a week | [H17] |
 
 ## 6. Amortization
 
@@ -87,8 +94,14 @@ Both figures are base pay only. The cost to the employer is higher once benefits
 | Servers and networking equipment | 5 to 6 years | Amazon, as of 2025-12-31 | [H13] |
 | Servers | changed from 5 to 6 years from 2024-01-01 | Amazon | [H13] |
 | Subset of servers and networking equipment | changed from 6 to 5 years from 2025-01-01 | Amazon | [H13] |
+| Some infrastructure equipment | changed from 3 to 4 years in 2018 | Dropbox | [F2] |
+| Datacenter and other computer equipment | 3 to 5 years | Dropbox, as of 2025-12-31 | [F3] |
+| Certain infrastructure and component assets | changed from 4 to 5 years from 2024-01-01 | Dropbox | [F3] |
 
-Dropbox's own depreciation periods for servers should come from its filings (#4), since that is the primary source for this case.
+| Cost of capital | Value | Who | Source |
+|---|---|---|---|
+| Weighted-average discount rate, finance leases (mainly infrastructure) | 5.3% (2025-12-31), 5.5% (2024-12-31) | Dropbox | [F3] |
+| WACC, US Software (System & Application), January 2026 | 9.34% (Software (Internet) 10.66%, Total Market 6.96%) | Damodaran, NYU Stern | [H18] |
 
 ## 7. What is uncertain or varies widely
 
@@ -99,5 +112,7 @@ Dropbox's own depreciation periods for servers should come from its filings (#4)
 - **Indian colocation figures come from a provider's own article** [H8]. It is undated and gives ranges. Look for an analyst report (JLL, CBRE India, Cushman and Wakefield) with Mumbai rates per kW.
 - **IP transit prices for Mumbai are not given as a number,** only as a rate of decline [H9]. City medians are only in a chart.
 - **Cross-connect price is from a reseller,** for one US facility [H10]. Indian cross-connect pricing is still missing.
+- **Switch price is one reseller listing** [H14]. It doesn't say what's included. Other 100GbE switch listings we found (CDW, Wamatek) blocked automated reads, and storage server listings only gave "price on request" (checked 2026-11-12), so the server cost still comes from [H3].
 - **Staff figures are not storage-specific.** BLS has no "storage engineer" or "SRE" category, so the closest one is used [H11]. The Indian figure is self-reported [H12].
-- **Amortization reference is Amazon's,** a hyperscaler with its own accounting choices [H13]. Dropbox's choice may differ.
+- **Dropbox's useful lives are a range** (3 to 5 years) for all datacenter equipment [F3]. The filing doesn't give a separate life for storage servers.
+- **Two kinds of cost of capital.** Dropbox's finance-lease rate [F3] is what it pays to borrow against equipment. An industry WACC [H18] is the return the whole company needs. The cost model uses the WACC as the base and the lease rate as the low case.

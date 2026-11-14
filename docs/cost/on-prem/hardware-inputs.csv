@@ -1,0 +1,18 @@
+input,value,unit,source
+start_pb,500,PB stored at the baseline,"[B1], workload model #15"
+growth,0.2,per year,"[T5], workload model #15"
+horizon_years,5,years,workload model #15; server life 5 to 6 years [H13]
+raw_overhead,3.0,raw bytes per stored byte,"two regions, each RS(6,3) [B2][T8][T9], workload model #15"
+regions,2,regions,[B2][B5]
+drive_tb,32,TB per drive,drives up to 32 TB [B14]
+drives_per_server,100,drives,"more than 100 drives per server, so a lower bound [B9]"
+servers_per_rack,8,servers,8 chassis per rack [B9]
+min_servers_per_region,9,servers,"RS(6,3) puts 9 fragments on 9 servers (our inference)"
+server_usd_per_tb_base,35.0,"USD per raw TB, server and drives","Storage Pod 6.0, about $35,000 per PB [H3]"
+server_usd_per_tb_low,32.0,"USD per raw TB, server and drives","Storage Pod 6.0 with 12 TB drives, $0.032 per GB [H3]"
+drive_only_usd_per_tb_aug2026_low,27.92,"USD per TB, drives only","Seagate Exos SATA, Aug 2026 [H2]"
+drive_only_usd_per_tb_aug2026_high,44.17,"USD per TB, drives only","WD Gold, Aug 2026 [H2]"
+tor_switches_per_rack,1,switches,"one 32-port top-of-rack switch: 2 x 100G per server down, 16 up (our inference)"
+rack_uplinks,16,100G ports,non-blocking leaf-spine (our inference)
+switch_ports,32,100G ports,[H14]
+switch_usd,7432.57,USD per switch,Edgecore 7716-32X [H14]. Optics and cables not included
