@@ -1,0 +1,30 @@
+[package]
+name = "satchel-bench"
+description = "Load generator for Satchel and the S3 baseline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# The S3 backend needs TLS, which builds a C crypto library. It's only used
+# for the S3 run on the AWS demo cluster, so it's off by default.
+s3 = ["dep:rusty-s3", "reqwest/rustls"]
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+rusty-s3 = { workspace = true, optional = true }
+satchel-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time", "sync"] }
+
+[dev-dependencies]
+axum.workspace = true
+
+[lints]
+workspace = true
