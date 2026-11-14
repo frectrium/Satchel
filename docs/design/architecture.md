@@ -125,17 +125,17 @@ flowchart TB
     C([Client or load generator]) -->|"PUT / GET / DELETE /blocks/{hash}"| API["satchel-api<br/>Frontend"]
     API <-->|"hash → volume, offset"| IDX[("satchel-index<br/>SQLite: Block Index<br/>+ Replication Table")]
 
-    subgraph CELL ["One cell, ap-south-1"]
+    subgraph CELL ["One cell: Compose locally, ap-south-1 for the demo"]
         direction LR
-        subgraph Z1 ["Zone z1 (1a)"]
+        subgraph Z1 ["Zone z1 (ap-south-1a on AWS)"]
             direction TB
             N11[node-z1-1] ~~~ N12[node-z1-2] ~~~ N13[node-z1-3]
         end
-        subgraph Z2 ["Zone z2 (1b)"]
+        subgraph Z2 ["Zone z2 (ap-south-1b on AWS)"]
             direction TB
             N21[node-z2-1] ~~~ N22[node-z2-2] ~~~ N23[node-z2-3]
         end
-        subgraph Z3 ["Zone z3 (1c)"]
+        subgraph Z3 ["Zone z3 (ap-south-1c on AWS)"]
             direction TB
             N31[node-z3-1] ~~~ N32[node-z3-2] ~~~ N33[node-z3-3]
         end
@@ -164,8 +164,8 @@ sequenceDiagram
     API->>API: check SHA-256(body) = hash, size 1 B to 4 MiB
     API->>IDX: does the hash exist?
     IDX-->>API: no (if yes, return success: dedup)
-    API->>IDX: nodes of one of my open volumes
-    API->>N: write block at the next offset, to all 3
+    API->>IDX: an open volume and its 3 nodes
+    API->>N: append block to all 3, check they return the same offset
     N-->>API: ack after fsync (on failure, retry another open volume)
     API->>IDX: add hash → volume, offset, length
     API-->>C: 201 Created
@@ -209,7 +209,7 @@ sequenceDiagram
 | RS(6,3) or LRC(12,2,2) | RS(6,3), 3 fragments per zone | Same code, reads usually hit one node | No LRC, no cold tier | DDL-007, 008 |
 | Master, Volume Managers | Master module in the verifier process, nodes act as Volume Managers | Soft-state coordinator off the data path, encoding on storage nodes | Shares a process with the verifier | DDL-009 |
 | Repair after 15 minutes | Configurable threshold, 30 s in tests | Close volumes, rebuild, commit by generation | No Reconcile, rebuild on one node | DDL-010 |
-| OSDs on raw SMR disks | `satchel-node` with extent files on EBS | Dumb nodes, fsync, inline metadata | Filesystem instead of raw disks | DDL-011 |
+| OSDs on raw SMR disks | `satchel-node` with extent files on a Docker volume (EBS on the demo cluster) | Dumb nodes, fsync, inline metadata | Filesystem instead of raw disks | DDL-011 |
 | Pocket Watch, six verifiers | `satchel-verifier`, two checks | Disk Scrubber and Metadata Scanner | Four verifiers left out | DDL-012 |
 | Garbage collection and compaction | Index entry removed on delete | Deleted blocks can't be read | Space isn't reclaimed | DDL-013 |
-| Dropbox's own data centers | EC2 Graviton instances, Terraform, Prometheus and Grafana | | Cloud VMs stand in for storage servers | DDL-015 |
+| Dropbox's own data centers | Docker Compose for development and experiments, EC2 Graviton instances with Terraform for the demo, Prometheus and Grafana | | Containers on one machine, and cloud VMs for the demo, stand in for storage servers | DDL-015, 016, 017 |
