@@ -31,6 +31,10 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked
       - name: Test
         run: cargo test --workspace --locked
+      - name: Clippy and test the load generator's S3 backend
+        run: |
+          cargo clippy -p satchel-bench --all-targets --features s3 --locked
+          cargo test -p satchel-bench --features s3 --locked
 
   docker:
     name: Docker image builds
