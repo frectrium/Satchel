@@ -1,0 +1,28 @@
+﻿Estimate summary
+Upfront cost,Monthly cost,Total 12 months cost,Currency
+0,68251998.34,819023980.08,USD
+,,* Includes upfront cost
+
+
+Detailed Estimate
+Group hierarchy,Region,Description,Service,Upfront,Monthly,First 12 months total,Currency,Status,Configuration summary
+My Estimate > My service group > Year 2,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 2, monthly average",S3 Standard,0,2385409.31,28624911.72,USD,,"S3 Standard storage (102445483 GB per month), PUT, COPY, POST, LIST requests to S3 Standard (5000000000), GET, SELECT, and all other requests from S3 Standard (9000000000)"
+My Estimate > My service group > Year 2,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 2, monthly average",S3 Standard - Infrequent Access,0,7130031.46,85560377.52,USD,,"S3 Standard-IA storage (512227416 GB per month), GET, SELECT, and all other requests from S3 Standard-IA (1000000000), Lifecycle Transition requests (4166666667), Data retrievals (1862645 GB per month)"
+My Estimate > My service group > Year 2,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 2, monthly average",Data Transfer,0,1490825.712,17889908.54,USD,,"DT Inbound: Not selected (0 TB per month), DT Outbound: Internet (18626451 GB per month)"
+My Estimate > My service group > Year 3,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 3, monthly average",S3 Standard,0,2862378.54,34348542.48,USD,,"S3 Standard storage (122934580 GB per month), PUT, COPY, POST, LIST requests to S3 Standard (6000000000), GET, SELECT, and all other requests from S3 Standard (10800000000)"
+My Estimate > My service group > Year 3,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 3, monthly average",S3 Standard - Infrequent Access,0,8556037.75,102672453.00,USD,,"S3 Standard-IA storage (614672899 GB per month), GET, SELECT, and all other requests from S3 Standard-IA (1200000000), Lifecycle Transition requests (5000000000), Data retrievals (2235174 GB per month)"
+My Estimate > My service group > Year 3,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 3, monthly average",Data Transfer,0,1788848.992,21466187.90,USD,,"DT Inbound: Not selected (0 TB per month), DT Outbound: Internet (22351742 GB per month)"
+My Estimate > My service group > Year 4,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 4, monthly average",S3 Standard,0,3434741.61,41216899.32,USD,,"S3 Standard storage (147521496 GB per month), PUT, COPY, POST, LIST requests to S3 Standard (7200000000), GET, SELECT, and all other requests from S3 Standard (12960000000)"
+My Estimate > My service group > Year 4,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 4, monthly average",S3 Standard - Infrequent Access,0,10267245.3,123206943.60,USD,,"S3 Standard-IA storage (737607479 GB per month), GET, SELECT, and all other requests from S3 Standard-IA (1440000000), Lifecycle Transition requests (6000000000), Data retrievals (2682209 GB per month)"
+My Estimate > My service group > Year 4,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 4, monthly average",Data Transfer,0,2146476.832,25757721.98,USD,,"DT Inbound: Not selected (0 TB per month), DT Outbound: Internet (26822090 GB per month)"
+My Estimate > My service group > Year 5,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 5, monthly average",S3 Standard,0,4121577.29,49458927.48,USD,,"S3 Standard storage (177025795 GB per month), PUT, COPY, POST, LIST requests to S3 Standard (8640000000), GET, SELECT, and all other requests from S3 Standard (15552000000)"
+My Estimate > My service group > Year 5,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 5, monthly average",S3 Standard - Infrequent Access,0,12320694.37,147848332.44,USD,,"S3 Standard-IA storage (885128975 GB per month), GET, SELECT, and all other requests from S3 Standard-IA (1728000000), Lifecycle Transition requests (7200000000), Data retrievals (3218651 GB per month)"
+My Estimate > My service group > Year 5,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 5, monthly average",Data Transfer,0,2575630.272,30907563.26,USD,,"DT Inbound: Not selected (0 TB per month), DT Outbound: Internet (32186508 GB per month)"
+My Estimate > My service group > Year 1,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 1, monthly average",S3 Standard,0,1987934.96,23855219.52,USD,,"S3 Standard storage (85371236 GB per month), PUT, COPY, POST, LIST requests to S3 Standard (4166666667), GET, SELECT, and all other requests from S3 Standard (7500000000)"
+My Estimate > My service group > Year 1,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 1, monthly average",S3 Standard - Infrequent Access,0,5941692.88,71300314.56,USD,,"S3 Standard-IA storage (426856180 GB per month), GET, SELECT, and all other requests from S3 Standard-IA (833333333), Lifecycle Transition requests (3472222222), Data retrievals (1552204 GB per month)"
+My Estimate > My service group > Year 1,Asia Pacific (Mumbai),"Satchel case workload (#15), base case year 1, monthly average",Data Transfer,0,1242473.072,14909676.86,USD,,"DT Inbound: Not selected (0 TB per month), DT Outbound: Internet (15522043 GB per month)"
+
+
+
+Acknowledgement
+"* AWS Pricing Calculator provides only an estimate of your AWS fees and doesn't include any taxes that might apply. Your actual fees depend on a variety of factors, including your actual usage of AWS services."
