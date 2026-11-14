@@ -126,6 +126,14 @@ cargo test -p satchel-it -- --ignored
 
 CI runs the same script on every PR, in the **Integration tests (Compose)** job.
 
+### Run an experiment
+
+`satchel-bench` puts and gets blocks against the cluster and writes exact latency percentiles and throughput as JSON. See [docs/experiments](docs/experiments/README.md) for every option and the S3 run.
+
+```bash
+cargo run --release -p satchel-bench -- --block-size 2MiB --clients 16 --out docs/results/e1/run.json
+```
+
 ### Run the cost calculator
 
 `satchel-cost` prices the case workload (#15) on AWS, Azure, on-prem and Satchel on EC2, and finds the data volume at which owning breaks even. Every default price is in the TOML files in `crates/satchel-cost/prices/`, tagged with its Source Log ID, and the method is in [`docs/cost/method.md`](docs/cost/method.md). Inputs that are proposed, assumed or not yet sourced are listed in `flagged-inputs.csv` and on every run.
@@ -147,7 +155,8 @@ Satchel/
 │   ├── satchel-node/       # Storage node (OSD)
 │   ├── satchel-verifier/   # Background verifier (Pocket Watch)
 │   ├── satchel-cost/       # Sizing and cost model behind the calculator
-│   └── satchel-it/         # Integration tests against a running cluster
+│   ├── satchel-it/         # Integration tests against a running cluster
+│   └── satchel-bench/      # Load generator for the experiments
 ├── docs/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
