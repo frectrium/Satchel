@@ -47,7 +47,11 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | [DDL-012](#ddl-012-verifier-implements-the-disk-scrubber-and-metadata-scanner) | Verifier implements the Disk Scrubber and Metadata Scanner | Verifier | Proposed |
 | [DDL-013](#ddl-013-deletes-remove-the-index-entry-no-compaction) | Deletes remove the index entry, no compaction | Deletes | Proposed |
 | [DDL-014](#ddl-014-satchel-is-written-in-rust) | Satchel is written in Rust | All | Proposed |
-| [DDL-015](#ddl-015-graviton-ec2-instances-for-measured-runs) | Graviton EC2 instances for measured runs | Deployment | Proposed (deviation) |
+| [DDL-015](#ddl-015-graviton-ec2-instances-for-measured-runs) | Graviton EC2 instances for measured runs | Deployment | Proposed (deviation), narrowed by DDL-016 |
+| [DDL-016](#ddl-016-experiments-run-on-the-local-cluster-aws-only-for-the-demo) | Experiments run on the local cluster, AWS only for the demo | Deployment | Proposed (deviation) |
+| [DDL-017](#ddl-017-prometheus-metrics-labelled-by-route-pattern) | Prometheus metrics labelled by route pattern | Observability | Proposed (deviation) |
+| [DDL-018](#ddl-018-volume-offsets-count-block-bytes-only) | Volume offsets count block bytes only | Storage node | Proposed |
+| [DDL-019](#ddl-019-the-index-refuses-new-blocks-on-closed-volumes) | The index refuses new blocks on closed volumes | Block Index | Proposed |
 
 ## Entries
 
@@ -212,6 +216,50 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | Satchel decision | Measured runs use non-burstable Graviton (arm64) instances in ap-south-1: `m7g.medium` storage nodes with a gp3 EBS data volume, one `m7g.large` for the API, Block Index and verifier, and a `c7g.large` load generator. The Docker image is built for arm64 (#34) |
 | Magic Pocket equivalent | **None (deliberate deviation).** Magic Pocket runs on Dropbox's own storage servers [B4][B9][B14] |
 | Dropbox's stated reasoning | Not applicable |
-| Source | None yet. Instance specifications and hourly prices go into the Source Log before the budget is set (#33) |
+| Source | [P3]: `m7g.medium` $0.0292 and `m7g.large` $0.0583 per hour, on-demand Linux in ap-south-1, read 2026-11-12 |
 | What Satchel simplifies | Cloud VMs with network block storage stand in for dense storage servers. Non-burstable types are chosen so CPU credits can't throttle a run and skew the latency percentiles *(our inference)* |
 | Status / date | Proposed, 2026-10-28 |
+
+### DDL-016: Experiments run on the local cluster, AWS only for the demo
+
+| Field | Value |
+|---|---|
+| Satchel decision | Development, tests and all experiments (E1 to E5) run on the Docker Compose cluster. AWS comes up only for one rehearsal and for the live viva demo, and is torn down straight after each (#64). E1's S3 comparison is a short run from the demo cluster, so S3's numbers don't include internet latency. E5 is measured on Compose, and the cost engine maps it to `m7g.medium` (DDL-015) |
+| Magic Pocket equivalent | **None (deliberate deviation).** Dropbox measured Magic Pocket on its own fleet and in load tests [T9] |
+| Dropbox's stated reasoning | Not applicable |
+| Source | Team decision, 2026-11-12 (#37, #64) |
+| What Satchel simplifies | All nodes share one machine, so local numbers show relative cost between block sizes, paths and layouts, not network latency between AZs or the throughput of separate hardware *(our inference)*. The write-ups for E1, E2 and E5 say so. Keeps AWS spend close to zero |
+| Status / date | Proposed, 2026-11-14 |
+
+### DDL-017: Prometheus metrics labelled by route pattern
+
+| Field | Value |
+|---|---|
+| Satchel decision | Every service serves `GET /metrics` in Prometheus format from `satchel_common::metrics`: request counts and latency histograms labelled by method, route pattern and status, and process CPU and memory. Storage nodes also export bytes stored. Prometheus and Grafana run in Compose with a provisioned dashboard (#21) |
+| Magic Pocket equivalent | **None (deliberate deviation).** The brief lists observability as a cloud-native component. Dropbox's monitoring stack for Magic Pocket isn't described in our sources |
+| Dropbox's stated reasoning | Not applicable |
+| Source | Project brief, section 4 |
+| What Satchel simplifies | The route label is the pattern (`/blocks/{hash}`), never the raw path, so a block hash never becomes a label value *(our inference)*. Dashboard percentiles are estimates from histogram buckets. Experiment results use the load generator's exact percentiles (#22) |
+| Status / date | Proposed, 2026-11-14 |
+
+### DDL-018: Volume offsets count block bytes only
+
+| Field | Value |
+|---|---|
+| Satchel decision | A block's offset in its volume counts only the bytes of the blocks before it. Each node's record header (magic, hash, length) stays inside the node. So the 3 replicas return the same offset, the index's volume `size` is the length of the block data, and encoding splits exactly that data into fragments |
+| Magic Pocket equivalent | OSDs own their on-disk layout and keep block metadata inline in the extent [B11]. Frontends don't see the cell topology or the disk layout [B2] |
+| Dropbox's stated reasoning | Keeping nodes simple keeps the protocols simple [B2]. Inline metadata removed the separate write cache [B11] |
+| Source | [B2], [B11] |
+| What Satchel simplifies | Dropbox's Block Index stores cell and bucket and leaves offsets to the OSD [B2]. Satchel's index stores the offset (DDL-003), so the offset has to mean the same thing on every node *(our inference)* |
+| Status / date | Proposed, 2026-11-14 |
+
+### DDL-019: The index refuses new blocks on closed volumes
+
+| Field | Value |
+|---|---|
+| Satchel decision | `PUT /blocks/{hash}` on the index returns 409 if the block's volume isn't open. The Master closes a volume in the Replication Table before encoding it, so no block lands in a volume after its data has been read for encoding |
+| Magic Pocket equivalent | Only open volumes take writes. Closed volumes are immutable and can be moved or coded [B2] |
+| Dropbox's stated reasoning | Splitting open from closed volumes "allows us to use far simpler consistency protocols" [B2] |
+| Source | [B2] |
+| What Satchel simplifies | The check lives in the index's write transaction instead of a separate protocol. A put that loses this race gets a 409, and the frontend retries on another open volume (DDL-006) |
+| Status / date | Proposed, 2026-11-14 |
