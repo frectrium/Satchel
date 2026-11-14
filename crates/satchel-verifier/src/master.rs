@@ -116,8 +116,25 @@ impl Master {
             .map_err(Into::into)
     }
 
+    async fn volumes(&self) -> anyhow::Result<Vec<Volume>> {
+        self.http
+            .get(format!("{}/volumes", self.config.index_url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+            .map_err(Into::into)
+    }
+
     async fn create_open(&self, healthy: &[NodeAddr]) -> anyhow::Result<Volume> {
-        let nodes: Vec<String> = replica_placement(healthy)
+        let mut usage = BTreeMap::new();
+        for volume in self.volumes().await? {
+            for node in volume.nodes {
+                *usage.entry(node).or_insert(0_u64) += 1;
+            }
+        }
+        let nodes: Vec<String> = replica_placement(healthy, &usage)
             .into_iter()
             .map(|node| node.id)
             .collect();
@@ -191,16 +208,24 @@ impl Master {
     }
 }
 
-/// Selects one node per zone. With an unavailable zone, this intentionally
-/// opens a smaller replica set instead of placing two replicas in one zone.
-pub fn replica_placement(nodes: &[NodeAddr]) -> Vec<NodeAddr> {
-    let mut by_zone = BTreeMap::new();
+/// Selects the least-used node in each zone for replicated volumes.
+pub fn replica_placement(nodes: &[NodeAddr], usage: &BTreeMap<String, u64>) -> Vec<NodeAddr> {
+    let mut by_zone: BTreeMap<String, Vec<NodeAddr>> = BTreeMap::new();
     for node in nodes {
         by_zone
             .entry(node.zone.clone())
-            .or_insert_with(|| node.clone());
+            .or_default()
+            .push(node.clone());
     }
-    by_zone.into_values().take(3).collect()
+    by_zone
+        .into_values()
+        .filter_map(|mut members| {
+            members
+                .sort_by_key(|node| (usage.get(&node.id).copied().unwrap_or(0), node.id.clone()));
+            members.into_iter().next()
+        })
+        .take(3)
+        .collect()
 }
 
 /// Selects three distinct nodes per zone for RS(6,3), or no placement unless
@@ -244,7 +269,7 @@ mod tests {
 
     #[test]
     fn replica_placement_never_duplicates_a_zone() {
-        let placement = replica_placement(&nodes());
+        let placement = replica_placement(&nodes(), &BTreeMap::new());
         assert_eq!(placement.len(), 3);
         assert_eq!(
             placement
@@ -253,6 +278,26 @@ mod tests {
                 .collect::<HashSet<_>>()
                 .len(),
             3
+        );
+    }
+
+    #[test]
+    fn replica_placement_prefers_added_nodes_with_less_data() {
+        let mut expanded = nodes();
+        expanded.extend(["z1", "z2", "z3"].map(|zone| NodeAddr {
+            id: format!("node-{zone}-4"),
+            zone: zone.into(),
+            url: format!("http://{zone}-4"),
+        }));
+        let usage: BTreeMap<_, _> = nodes().into_iter().map(|node| (node.id, 1)).collect();
+
+        let placement = replica_placement(&expanded, &usage);
+        assert_eq!(
+            placement
+                .into_iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>(),
+            ["node-z1-4", "node-z2-4", "node-z3-4"]
         );
     }
 

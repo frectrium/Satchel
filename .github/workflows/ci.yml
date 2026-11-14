@@ -45,8 +45,15 @@ jobs:
           tags: satchel:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Validate docker-compose.yml
-        run: docker compose config --quiet
+      - name: Validate Compose configurations
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.12.yml config --format json | jq -e '
+            [.services[] | select(.command[0] == "satchel-node") | has("healthcheck")] | all
+          '
+          docker compose -f docker-compose.yml -f docker-compose.18.yml config --format json | jq -e '
+            [.services[] | select(.command[0] == "satchel-node") | has("healthcheck")] | all
+          '
 
   integration:
     name: Integration tests (Compose)
