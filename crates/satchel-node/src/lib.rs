@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context};
@@ -32,6 +33,8 @@ pub struct NodeStore {
 struct Inner {
     dir: PathBuf,
     replicas: Mutex<BTreeMap<u64, Vec<BlockRecord>>>,
+    append_locks: Mutex<BTreeMap<u64, Arc<Mutex<()>>>>,
+    stored_bytes: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -88,6 +91,8 @@ impl NodeStore {
             inner: Arc::new(Inner {
                 dir,
                 replicas: Mutex::new(replicas),
+                append_locks: Mutex::default(),
+                stored_bytes: AtomicU64::new(stored_bytes),
             }),
         })
     }
@@ -103,11 +108,24 @@ impl NodeStore {
             bail!("block checksum does not match x-satchel-block");
         }
 
-        let mut records = self
+        let append_lock = self
+            .inner
+            .append_locks
+            .lock()
+            .expect("append lock index poisoned")
+            .entry(volume)
+            .or_default()
+            .clone();
+        let _writer = append_lock.lock().expect("append lock poisoned");
+
+        let offset = self
             .inner
             .replicas
             .lock()
-            .expect("replica index lock poisoned");
+            .expect("replica index lock poisoned")
+            .get(&volume)
+            .and_then(|entries| entries.last())
+            .map_or(0, |record| record.offset + record.length);
         let path = replica_path(&self.inner.dir, volume);
         let mut file = OpenOptions::new()
             .create(true)
@@ -116,10 +134,6 @@ impl NodeStore {
             .open(&path)
             .with_context(|| format!("open replica extent {}", path.display()))?;
         let data_offset = file.seek(SeekFrom::End(0))? + RECORD_HEADER_LEN;
-        let offset = records
-            .get(&volume)
-            .and_then(|entries| entries.last())
-            .map_or(0, |record| record.offset + record.length);
 
         file.write_all(&RECORD_MAGIC)?;
         file.write_all(&expected_hash)?;
@@ -127,23 +141,32 @@ impl NodeStore {
         file.write_all(bytes)?;
         file.sync_data().context("fsync appended block")?;
 
-        records.entry(volume).or_default().push(BlockRecord {
-            offset,
-            length: bytes.len() as u64,
-            hash: expected_hash,
-            data_offset,
-        });
-        self.refresh_metric()?;
+        self.inner
+            .replicas
+            .lock()
+            .expect("replica index lock poisoned")
+            .entry(volume)
+            .or_default()
+            .push(BlockRecord {
+                offset,
+                length: bytes.len() as u64,
+                hash: expected_hash,
+                data_offset,
+            });
+        self.adjust_stored_bytes(0, bytes.len() as u64);
         Ok(offset)
     }
 
     fn read_replica(&self, volume: u64, offset: u64, length: u64) -> anyhow::Result<Vec<u8>> {
-        let records = self
+        let entries = self
             .inner
             .replicas
             .lock()
             .expect("replica index lock poisoned");
-        let entries = records.get(&volume).context("unknown replica volume")?;
+        let entries = entries
+            .get(&volume)
+            .cloned()
+            .context("unknown replica volume")?;
         let end = offset.checked_add(length).context("range overflow")?;
         let extent_len = entries
             .last()
@@ -154,7 +177,7 @@ impl NodeStore {
 
         let mut output = Vec::with_capacity(length as usize);
         let mut file = File::open(replica_path(&self.inner.dir, volume))?;
-        for record in entries {
+        for record in &entries {
             let record_end = record.offset + record.length;
             let start = offset.max(record.offset);
             let finish = end.min(record_end);
@@ -188,13 +211,16 @@ impl NodeStore {
             bail!("fragment checksum does not match x-satchel-checksum");
         }
         let final_path = fragment_path(&self.inner.dir, volume, fragment);
+        let previous_len = fs::metadata(&final_path)
+            .map(|metadata| metadata.len().saturating_sub(32))
+            .unwrap_or(0);
         let temporary_path = final_path.with_extension("tmp");
         let mut file = File::create(&temporary_path)?;
         file.write_all(&expected_checksum)?;
         file.write_all(bytes)?;
         file.sync_all().context("fsync fragment")?;
         fs::rename(&temporary_path, &final_path)?;
-        self.refresh_metric()?;
+        self.adjust_stored_bytes(previous_len, bytes.len() as u64);
         Ok(())
     }
 
@@ -229,27 +255,48 @@ impl NodeStore {
     }
 
     fn delete_replica(&self, volume: u64) -> anyhow::Result<bool> {
+        let append_lock = self
+            .inner
+            .append_locks
+            .lock()
+            .expect("append lock index poisoned")
+            .entry(volume)
+            .or_default()
+            .clone();
+        let _writer = append_lock.lock().expect("append lock poisoned");
         let path = replica_path(&self.inner.dir, volume);
-        if !path.exists() {
-            return Ok(false);
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
         }
-        fs::remove_file(path)?;
-        self.inner
+        let removed = self
+            .inner
             .replicas
             .lock()
             .expect("replica index lock poisoned")
-            .remove(&volume);
-        self.refresh_metric()?;
+            .remove(&volume)
+            .unwrap_or_default()
+            .iter()
+            .map(|record| record.length)
+            .sum();
+        self.adjust_stored_bytes(removed, 0);
         Ok(true)
     }
 
     fn delete_fragment(&self, volume: u64, fragment: u8) -> anyhow::Result<bool> {
         let path = fragment_path(&self.inner.dir, volume, fragment);
-        if !path.exists() {
-            return Ok(false);
+        let removed = match fs::metadata(&path) {
+            Ok(metadata) => metadata.len().saturating_sub(32),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
         }
-        fs::remove_file(path)?;
-        self.refresh_metric()?;
+        self.adjust_stored_bytes(removed, 0);
         Ok(true)
     }
 
@@ -283,10 +330,23 @@ impl NodeStore {
         Ok(result)
     }
 
-    fn refresh_metric(&self) -> anyhow::Result<()> {
-        let bytes = stored_bytes(&self.inner.dir)?;
-        metrics::node_stored_bytes().set(i64::try_from(bytes).unwrap_or(i64::MAX));
-        Ok(())
+    fn adjust_stored_bytes(&self, removed: u64, added: u64) {
+        let mut current = self.inner.stored_bytes.load(Ordering::Relaxed);
+        loop {
+            let next = current.saturating_sub(removed).saturating_add(added);
+            match self.inner.stored_bytes.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    metrics::node_stored_bytes().set(i64::try_from(next).unwrap_or(i64::MAX));
+                    return;
+                }
+                Err(actual) => current = actual,
+            }
+        }
     }
 }
 
@@ -316,7 +376,7 @@ async fn append_block(
 ) -> Response {
     let hash = match parse_hash(&headers, &BLOCK_HEADER) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
     match store.append_block(volume, hash, &body) {
         Ok(offset) => (
@@ -359,7 +419,7 @@ async fn write_fragment(
 ) -> Response {
     let checksum = match parse_hash(&headers, &CHECKSUM_HEADER) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
     match store.write_fragment(volume, fragment, checksum, &body) {
         Ok(()) => StatusCode::CREATED.into_response(),
@@ -421,13 +481,11 @@ async fn list_extents(State(store): State<NodeStore>) -> Response {
     }
 }
 
-fn parse_hash(headers: &HeaderMap, name: &HeaderName) -> Result<[u8; 32], Response> {
+fn parse_hash(headers: &HeaderMap, name: &HeaderName) -> Result<[u8; 32], String> {
     let Some(value) = headers.get(name).and_then(|value| value.to_str().ok()) else {
-        return Err((StatusCode::BAD_REQUEST, format!("missing {name}")).into_response());
+        return Err(format!("missing {name}"));
     };
-    let hash: BlockHash = value
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, format!("invalid {name}")).into_response())?;
+    let hash: BlockHash = value.parse().map_err(|_| format!("invalid {name}"))?;
     let decoded = hex::decode(hash.to_string()).expect("BlockHash always formats as hex");
     Ok(decoded.try_into().expect("SHA-256 is 32 bytes"))
 }
@@ -696,5 +754,15 @@ mod tests {
         file.write_all(b"X").unwrap();
         file.sync_all().unwrap();
         assert!(store.read_replica(4, 0, bytes.len() as u64).is_err());
+    }
+
+    #[test]
+    fn append_does_not_rescan_extents_to_refresh_the_metric() {
+        let dir = TestDir::new();
+        let store = NodeStore::open(&dir.0).unwrap();
+        fs::write(replica_path(&dir.0, 99), b"not a replica record").unwrap();
+
+        let bytes = b"new block";
+        store.append_block(4, sha256(bytes), bytes).unwrap();
     }
 }
