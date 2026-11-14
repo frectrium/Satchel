@@ -642,6 +642,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "satchel-cost"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "satchel-index"
 version = "0.1.0"
 dependencies = [
