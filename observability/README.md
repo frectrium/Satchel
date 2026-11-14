@@ -19,7 +19,11 @@ Prometheus and Grafana for the Satchel cluster (#21). Every service exports its 
 
 `route` is the route pattern, for example `/blocks/{hash}`, never the raw path, so a block hash never becomes a label. Requests that match no route are counted as `unmatched`.
 
-The dashboard's latency percentiles come from histogram buckets, so they are approximate. Experiment results use the exact percentiles the load generator (#22) records.
+The dashboard's latency percentiles come from histogram buckets, so they are approximate. Experiment results use the exact percentiles the load generator (#22) records. Panels group by the scrape `service` label, so the frontend and the index never share a percentile for the same route.
+
+## Disk and network (E5)
+
+The process collector covers CPU and memory only. For disk and network per service, E5 (#77) samples `docker stats --no-stream --format json` every few seconds during the run and saves the output next to its results. There's no cAdvisor in Compose: it needs host mounts that Docker Desktop on macOS doesn't fully provide, and E5 is the only experiment that needs these figures.
 
 ## Changing the dashboard
 

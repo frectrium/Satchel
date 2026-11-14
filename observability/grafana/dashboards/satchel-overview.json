@@ -199,8 +199,8 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le, method, route) (rate(satchel_http_request_duration_seconds_bucket{route=~\"$route\"}[1m])))",
-          "legendFormat": "p50 {{method}} {{route}}"
+          "expr": "histogram_quantile(0.5, sum by (le, service, method, route) (rate(satchel_http_request_duration_seconds_bucket{route=~\"$route\"}[1m])))",
+          "legendFormat": "p50 {{service}} {{method}} {{route}}"
         },
         {
           "datasource": {
@@ -208,8 +208,8 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "histogram_quantile(0.9, sum by (le, method, route) (rate(satchel_http_request_duration_seconds_bucket{route=~\"$route\"}[1m])))",
-          "legendFormat": "p90 {{method}} {{route}}"
+          "expr": "histogram_quantile(0.9, sum by (le, service, method, route) (rate(satchel_http_request_duration_seconds_bucket{route=~\"$route\"}[1m])))",
+          "legendFormat": "p90 {{service}} {{method}} {{route}}"
         },
         {
           "datasource": {
@@ -217,8 +217,8 @@
             "uid": "prometheus"
           },
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (le, method, route) (rate(satchel_http_request_duration_seconds_bucket{route=~\"$route\"}[1m])))",
-          "legendFormat": "p99 {{method}} {{route}}"
+          "expr": "histogram_quantile(0.99, sum by (le, service, method, route) (rate(satchel_http_request_duration_seconds_bucket{route=~\"$route\"}[1m])))",
+          "legendFormat": "p99 {{service}} {{method}} {{route}}"
         }
       ]
     },
