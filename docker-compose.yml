@@ -1,9 +1,11 @@
 # Local development cluster: one frontend, one Block Index, one verifier and
 # one storage node in each of three simulated zones (z1, z2, z3), mirroring
-# the three availability zones of ap-south-1 used for measurement.
+# the three availability zones of ap-south-1. Prometheus and Grafana scrape
+# every service (#21).
 #
 #   docker compose up --build
 #   curl localhost:8080/health
+#   open http://localhost:3000   # Grafana, "Satchel overview" dashboard
 
 x-satchel: &satchel
   image: satchel:dev
@@ -59,7 +61,31 @@ services:
     ports: ["8085:8085"]
     depends_on: [index]
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    ports: ["9090:9090"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    environment:
+      # Local only: anyone on this machine can view the dashboards.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/satchel-overview.json
+    ports: ["3000:3000"]
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
 volumes:
   node-z1:
   node-z2:
   node-z3:
+  prometheus:

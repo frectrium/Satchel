@@ -156,3 +156,52 @@ fn ts_node_4_nodes_report_their_zone() {
         },
     );
 }
+
+#[test]
+#[ignore = "needs the Compose cluster: run scripts/integration-test.sh"]
+fn ts_svc_3_all_services_export_metrics() {
+    let cluster = cluster();
+    let services: Vec<&Service> = cluster.services.iter().collect();
+    let agent = agent();
+    check_all(
+        "TS-SVC-3",
+        &services,
+        cluster.ready_timeout,
+        |service, _health| {
+            let url = format!("{}/metrics", service.base_url);
+            let mut response = agent
+                .get(&url)
+                .call()
+                .map_err(|e| format!("{} at {url}: {e}", service.name))?;
+            let status = response.status().as_u16();
+            let body = response.body_mut().read_to_string().map_err(|e| {
+                format!(
+                    "{} at {url}: HTTP {status}, unreadable body: {e}",
+                    service.name
+                )
+            })?;
+            // The /health polls above are already counted. process_* comes
+            // from the Linux process collector.
+            let mut expected = vec![
+                "satchel_http_requests_total{",
+                "satchel_http_request_duration_seconds_bucket{",
+                "process_resident_memory_bytes ",
+            ];
+            if service.zone.is_some() {
+                expected.push("satchel_node_stored_bytes ");
+            }
+            let missing: Vec<&str> = expected
+                .into_iter()
+                .filter(|metric| !body.contains(metric))
+                .collect();
+            if status == 200 && missing.is_empty() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{} at {url}: HTTP {status}, missing {missing:?}",
+                    service.name
+                ))
+            }
+        },
+    );
+}

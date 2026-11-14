@@ -1,0 +1,22 @@
+# Scrapes every Satchel service in the local Compose cluster. The `service`
+# and `zone` labels let the dashboards group by component and zone. Add new
+# storage nodes here when the cluster grows.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: satchel
+    static_configs:
+      - targets: ["api:8080"]
+        labels: { service: api }
+      - targets: ["index:8081"]
+        labels: { service: index }
+      - targets: ["verifier:8085"]
+        labels: { service: verifier }
+      - targets: ["node-z1:8090"]
+        labels: { service: node, zone: z1 }
+      - targets: ["node-z2:8090"]
+        labels: { service: node, zone: z2 }
+      - targets: ["node-z3:8090"]
+        labels: { service: node, zone: z3 }
