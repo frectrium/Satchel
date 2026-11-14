@@ -4,6 +4,8 @@ Issue #14. What we build in Week 3, where it runs, and what we measure. This tur
 
 Source IDs refer to the [Source Log](../sources/README.md). Anything we work out ourselves is marked *(our inference)*.
 
+> **Status, Week 3:** since Week 3 the experiments run on the local Compose cluster, and AWS is used only for the viva demo and a short S3 comparison (#37, #64, DDL-016). Sections 3 and 4 still describe the original AWS plan, including the instance-hour budget, which now applies only to that S3 run. The Week 3 report lists the changes from this plan.
+
 ## 1. Decisions at a glance
 
 | Question from #14 | Decision | DDL |
@@ -39,9 +41,9 @@ Source IDs refer to the [Source Log](../sources/README.md). Anything we work out
 1. The client sends `PUT /blocks/{hash}` to `satchel-api`.
 2. The API checks the body hashes to `{hash}` and that its size is 1 byte to 4 MiB.
 3. The API asks `satchel-index` whether the hash exists. If it does, it returns success (dedup).
-4. The API picks one of its open volumes and the next offset in it. The Replication Table gives the volume's 3 nodes.
-5. The API writes the block to all 3 nodes at that offset. Each node appends and fsyncs before replying.
-6. If any node fails, the API retries the block on another open volume.
+4. The API picks an open volume from the Replication Table, which also gives the volume's 3 nodes.
+5. The API appends the block to all 3 nodes in parallel. Each node appends, fsyncs and returns the offset it wrote at, and the API checks that all 3 offsets match (DDL-018).
+6. If any node fails or the offsets differ, the API stops using that volume and retries the block on another open volume.
 7. The API records `hash → volume, offset, length` in the Block Index and returns success.
 
 ### Get
@@ -135,7 +137,7 @@ Change one factor at a time from the defaults.
 | One node stopped | Stop one node's container during a steady run | Error rate and latency while it's down. Time to detect, time to repair, and GiB repaired (repair threshold 30 s) |
 | Node returns before the threshold | Stop a node for 15 s, then start it again | No repair is triggered |
 | Zone lost | Stop all 3 nodes in one zone | Reads of replicated and coded data still succeed. Writes continue on volumes placed in the two healthy zones (DDL-006) |
-| Corrupted block | Flip a byte in a stored extent | The scrubber reports it, and a get still returns correct data (#31) |
+| Corrupted block | Flip a byte in a stored extent, once on a replicated volume and once on a coded one | The scrubber reports it, and a get still returns correct data: from another replica, or by a degraded read of the coded volume (#70) (#31) |
 
 ### E5. Satchel's own resource usage
 
@@ -168,6 +170,7 @@ That's about 17 hours of an 11-instance cluster, spread over several sessions, p
 ## 6. Comparing against S3
 
 - **Same client:** one load generator binary (#22) with an `s3` backend, run from the same VM.
+- **Same network:** the S3 run happens on the AWS demo cluster before the viva (#63, #74). From the same VM, the same short run also goes against Satchel on that cluster, so both latencies cross the same network. The Compose results for E1 are reported on their own and not compared with S3, since their network is mostly loopback *(our inference)*.
 - **Same workload:** the same block sizes, contents, mix and concurrency. The S3 object key is the block's hash.
 - **Same region:** an S3 Standard bucket in ap-south-1. S3 Standard keeps data in at least 3 AZs [P2], like Satchel. #20 decides how the load generator reaches S3 inside the region and records it, since the path changes latency.
 - **What's compared:** latency percentiles and throughput (E1), and cost per GB-month and per request: S3's list prices [P1] against Satchel's measured cost on EC2 (E5).
