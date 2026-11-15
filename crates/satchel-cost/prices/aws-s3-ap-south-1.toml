@@ -1,0 +1,125 @@
+# AWS S3 list prices, Asia Pacific (Mumbai), ap-south-1.
+# Every value carries the Source Log ID it comes from. Read from the live pricing
+# page with the region set to Mumbai on 2026-10-20 [P1], storage classes from [P2].
+
+[meta]
+provider = "aws"
+service = "s3"
+region = "ap-south-1"
+currency = "USD"
+accessed = "2026-10-20"
+source = "P1"
+# AWS bills binary units: 1 GB = 2^30 bytes, 1 TB = 1,024 GB [P1].
+gb_bytes = 1073741824
+
+# Storage, USD per GB-month. A band's `up_to_gb` is its cumulative upper edge.
+# The last band has no `up_to_gb`.
+[storage.standard]
+source = "P1"
+bands = [
+  { up_to_gb = 51200, usd_per_gb_month = 0.025 },
+  { up_to_gb = 512000, usd_per_gb_month = 0.024 },
+  { usd_per_gb_month = 0.023 },
+]
+
+[storage.intelligent_tiering]
+source = "P1"
+frequent_bands = [
+  { up_to_gb = 51200, usd_per_gb_month = 0.025 },
+  { up_to_gb = 512000, usd_per_gb_month = 0.024 },
+  { usd_per_gb_month = 0.023 },
+]
+infrequent_usd_per_gb_month = 0.0138
+archive_instant_usd_per_gb_month = 0.005
+archive_access_usd_per_gb_month = 0.0045
+deep_archive_access_usd_per_gb_month = 0.002
+monitoring_usd_per_1000_objects_month = 0.0025
+monitoring_min_object_kb = 128
+
+[storage.standard_ia]
+source = "P1"
+usd_per_gb_month = 0.0138
+min_object_kb = 128
+min_days = 30
+
+[storage.one_zone_ia]
+source = "P1"
+usd_per_gb_month = 0.011
+min_object_kb = 128
+min_days = 30
+
+[storage.express_one_zone]
+source = "P1"
+usd_per_gb_month = 0.124
+
+[storage.glacier_instant_retrieval]
+source = "P1"
+usd_per_gb_month = 0.005
+min_object_kb = 128
+min_days = 90
+
+[storage.glacier_flexible_retrieval]
+source = "P1"
+usd_per_gb_month = 0.0045
+min_days = 90
+metadata_kb_per_object_standard = 8
+metadata_kb_per_object_glacier = 32
+
+[storage.glacier_deep_archive]
+source = "P1"
+usd_per_gb_month = 0.002
+min_days = 180
+metadata_kb_per_object_standard = 8
+metadata_kb_per_object_glacier = 32
+
+# Requests, USD per 1,000. LIST is charged at the class's PUT rate; DELETE is free [P1].
+[requests]
+source = "P1"
+standard = { put = 0.005, get = 0.0004, lifecycle_in = 0.0 }
+standard_ia = { put = 0.01, get = 0.001, lifecycle_in = 0.01 }
+one_zone_ia = { put = 0.01, get = 0.001, lifecycle_in = 0.01 }
+express_one_zone = { put = 0.00113, get = 0.00003 }
+glacier_instant_retrieval = { put = 0.02, get = 0.01, lifecycle_in = 0.02 }
+glacier_flexible_retrieval = { put = 0.036, get = 0.0004, lifecycle_in = 0.036 }
+glacier_deep_archive = { put = 0.07, get = 0.0004, lifecycle_in = 0.07 }
+
+# Retrieval: USD per GB retrieved, and USD per 1,000 retrieval requests where listed [P1].
+[retrieval]
+source = "P1"
+standard_ia = { usd_per_gb = 0.01 }
+one_zone_ia = { usd_per_gb = 0.01 }
+glacier_instant_retrieval = { usd_per_gb = 0.03 }
+glacier_flexible_expedited = { usd_per_gb = 0.036, usd_per_1000_requests = 12.00 }
+glacier_flexible_standard = { usd_per_gb = 0.012, usd_per_1000_requests = 0.06 }
+glacier_deep_archive_standard = { usd_per_gb = 0.024, usd_per_1000_requests = 0.12 }
+glacier_deep_archive_bulk = { usd_per_gb = 0.005, usd_per_1000_requests = 0.03 }
+
+# Data transfer, USD per GB. Bands are per month; the first 100 GB a month is free,
+# aggregated across all AWS services [P1]. Above 500 TB a month AWS says to contact it.
+[transfer.internet_out]
+source = "P1"
+free_gb_per_month = 100
+bands = [
+  { up_to_gb = 10240, usd_per_gb = 0.1093 },
+  { up_to_gb = 51200, usd_per_gb = 0.085 },
+  { up_to_gb = 153600, usd_per_gb = 0.082 },
+  { usd_per_gb = 0.08 },
+]
+contact_sales_above_gb_per_month = 512000
+
+[transfer.other]
+source = "P1"
+internet_in_usd_per_gb = 0.0
+to_cloudfront_usd_per_gb = 0.0
+to_other_aws_region_usd_per_gb = 0.086
+same_region_usd_per_gb = 0.0
+
+# Durability and placement, for matching tiers across providers [P2].
+[classes]
+source = "P2"
+standard = { azs = 3, millisecond_access = true }
+standard_ia = { azs = 3, millisecond_access = true }
+one_zone_ia = { azs = 1, millisecond_access = true }
+glacier_instant_retrieval = { azs = 3, millisecond_access = true }
+glacier_flexible_retrieval = { azs = 3, millisecond_access = false }
+glacier_deep_archive = { azs = 3, millisecond_access = false }
