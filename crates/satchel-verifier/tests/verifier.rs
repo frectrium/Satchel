@@ -150,6 +150,7 @@ async fn cluster() -> Cluster {
     {
         let mut i = index.lock().unwrap();
         i.volumes.push(Volume {
+            opened_at_secs: 0,
             id: 1,
             state: VolumeState::Open,
             kind: VolumeKind::Replicated,
@@ -161,6 +162,7 @@ async fn cluster() -> Cluster {
         i.blocks
             .push((BlockHash::of(&b), 1, a.len() as u64, b.len() as u64));
         i.volumes.push(Volume {
+            opened_at_secs: 0,
             id: 2,
             state: VolumeState::Closed,
             kind: VolumeKind::Rs63,

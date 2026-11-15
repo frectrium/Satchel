@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use satchel_common::service::{self, ServiceConfig};
-use satchel_verifier::repair::{self, RepairConfig, Repairer};
 use satchel_verifier::master::{Master, MasterConfig};
+use satchel_verifier::repair::{self, RepairConfig, Repairer};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
