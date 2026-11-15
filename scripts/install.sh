@@ -27,7 +27,7 @@ command -v tar >/dev/null || die "tar is required"
 
 case "$(uname -s)" in
     Darwin) os=apple-darwin ;;
-    Linux) os=unknown-linux-gnu ;;
+    Linux) os=unknown-linux-musl ;;
     *) die "unsupported OS $(uname -s). Satchel ships for macOS and Linux." ;;
 esac
 case "$(uname -m)" in
