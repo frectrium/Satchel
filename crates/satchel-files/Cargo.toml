@@ -9,11 +9,14 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+argon2 = "0.5"
 axum.workspace = true
 futures-util.workspace = true
+getrandom = "0.3"
 hex.workspace = true
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["json", "rustls", "stream"] }
 rusqlite.workspace = true
+rusty-s3 = { workspace = true, features = ["xml"] }
 satchel-common.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,6 +26,7 @@ tower-http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+reqwest = { workspace = true, features = ["json", "cookies"] }
 tower.workspace = true
 
 [lints]

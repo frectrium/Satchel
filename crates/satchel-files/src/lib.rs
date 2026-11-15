@@ -1,18 +1,26 @@
-//! Satchel files service: whole files on top of Satchel's block store, the
-//! API the website and the local install talk to.
+//! Satchel files service: whole files on top of a storage backend, the API
+//! the website and the local install talk to.
 //!
-//! A file is split into blocks of up to 4 MiB (DDL-001), each stored by its
-//! SHA-256 through the frontend, so identical blocks are stored once
-//! (DDL-002). The manifest ([`manifest`]) keeps each file's block list.
-//! Dropbox splits files into blocks the same way and keeps file metadata in
-//! separate systems such as FileJournal [B2]. Here that metadata is a small
-//! SQLite database next to the service, a deliberate deviation (DDL-020).
+//! **Satchel backend** (the local install): a file is split into blocks of
+//! up to 4 MiB (DDL-001), each stored by its SHA-256 through the frontend,
+//! so identical blocks are stored once (DDL-002). The manifest
+//! ([`manifest`]) keeps each file's block list. Dropbox splits files into
+//! blocks the same way and keeps file metadata in separate systems such as
+//! FileJournal [B2]. Here that metadata is a small SQLite database next to
+//! the service, a deliberate deviation (DDL-020).
+//!
+//! **S3 backend** (the hosted site): each file is one whole object in S3,
+//! what Dropbox moved away from. Only signed-in admins may use it
+//! ([`auth`]).
 //!
 //! Routes, all under `/v1`: `GET /info`, `GET /stats`, `GET /files`,
-//! `POST /files?name=`, `GET /files/{id}`, `GET /files/{id}/content` and
-//! `DELETE /files/{id}`.
+//! `POST /files?name=`, `GET /files/{id}`, `GET /files/{id}/content`,
+//! `DELETE /files/{id}`, and for the S3 backend `POST /login`,
+//! `POST /logout` and `GET /me`.
 
+pub mod auth;
 pub mod manifest;
+pub mod s3;
 pub mod satchel;
 
 use std::sync::Arc;
@@ -21,9 +29,9 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use axum::{
     body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, Query, State},
-    http::{header, HeaderValue, Method, StatusCode},
-    response::{IntoResponse, Response},
-    routing::get,
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    response::{IntoResponse, Redirect, Response},
+    routing::{get, post},
     Json, Router,
 };
 use futures_util::StreamExt;
@@ -59,19 +67,54 @@ pub struct Config {
     pub limits: Limits,
 }
 
+pub enum Backend {
+    Satchel {
+        client: SatchelClient,
+        manifest: Manifest,
+    },
+    S3(s3::S3Store),
+}
+
 pub struct AppState {
-    client: SatchelClient,
-    manifest: Manifest,
+    backend: Backend,
+    auth: Option<auth::Auth>,
     config: Config,
 }
 
 impl AppState {
+    /// The local install: Satchel underneath, no login.
     pub fn new(client: SatchelClient, manifest: Manifest, config: Config) -> Arc<Self> {
         Arc::new(Self {
-            client,
-            manifest,
+            backend: Backend::Satchel { client, manifest },
+            auth: None,
             config,
         })
+    }
+
+    /// The hosted site: S3 underneath, admins only.
+    pub fn s3(store: s3::S3Store, auth: auth::Auth, config: Config) -> Arc<Self> {
+        Arc::new(Self {
+            backend: Backend::S3(store),
+            auth: Some(auth),
+            config,
+        })
+    }
+
+    fn backend_name(&self) -> &'static str {
+        match self.backend {
+            Backend::Satchel { .. } => "satchel",
+            Backend::S3(_) => "s3",
+        }
+    }
+
+    /// `Some(401)` when a login is required and the request has none.
+    fn deny(&self, headers: &HeaderMap) -> Option<Response> {
+        let auth = self.auth.as_ref()?;
+        if auth.user(headers).is_some() {
+            None
+        } else {
+            Some(error(StatusCode::UNAUTHORIZED, "sign in as an admin first"))
+        }
     }
 }
 
@@ -80,6 +123,9 @@ pub fn router(state: Arc<AppState>) -> Router {
     let cors = cors(&state.config.allowed_origins);
     Router::new()
         .route("/v1/info", get(info))
+        .route("/v1/login", post(login))
+        .route("/v1/logout", post(logout))
+        .route("/v1/me", get(me))
         .route("/v1/stats", get(stats))
         .route("/v1/files", get(list).post(upload))
         .route("/v1/files/{id}", get(file).delete(remove))
@@ -158,13 +204,16 @@ pub fn clean_name(raw: Option<&str>) -> String {
     }
 }
 
+// ---------- info and login ----------
+
 #[derive(Serialize)]
 struct Info {
     service: &'static str,
     version: &'static str,
     backend: &'static str,
-    block_bytes: usize,
-    replicas: u32,
+    login_required: bool,
+    block_bytes: Option<usize>,
+    replicas: Option<u32>,
     nodes: Vec<NodeInfo>,
     max_file_bytes: Option<u64>,
     max_total_bytes: Option<u64>,
@@ -177,75 +226,177 @@ struct NodeInfo {
 }
 
 async fn info(State(state): State<Arc<AppState>>) -> Response {
+    let (block_bytes, replicas, nodes) = match &state.backend {
+        Backend::Satchel { client, .. } => (
+            Some(BLOCK_BYTES),
+            Some(REPLICAS),
+            client
+                .nodes()
+                .iter()
+                .map(|n| NodeInfo {
+                    id: n.id.clone(),
+                    zone: n.zone.clone(),
+                })
+                .collect(),
+        ),
+        Backend::S3(_) => (None, None, Vec::new()),
+    };
     Json(Info {
         service: "satchel-files",
         version: env!("CARGO_PKG_VERSION"),
-        backend: "satchel",
-        block_bytes: BLOCK_BYTES,
-        replicas: REPLICAS,
-        nodes: state
-            .client
-            .nodes()
-            .iter()
-            .map(|n| NodeInfo {
-                id: n.id.clone(),
-                zone: n.zone.clone(),
-            })
-            .collect(),
+        backend: state.backend_name(),
+        login_required: state.auth.is_some(),
+        block_bytes,
+        replicas,
+        nodes,
         max_file_bytes: state.config.limits.max_file_bytes,
         max_total_bytes: state.config.limits.max_total_bytes,
     })
     .into_response()
 }
 
+#[derive(Deserialize)]
+struct Login {
+    user: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct Me {
+    user: Option<String>,
+}
+
+async fn login(State(state): State<Arc<AppState>>, Json(l): Json<Login>) -> Response {
+    if state.auth.is_none() {
+        return error(StatusCode::NOT_FOUND, "this install has no login");
+    }
+    // Argon2 is deliberately slow, so it runs off the async workers.
+    let checker = state.clone();
+    let user = l.user.clone();
+    let ok = tokio::task::spawn_blocking(move || {
+        checker
+            .auth
+            .as_ref()
+            .is_some_and(|a| a.verify(&user, &l.password))
+    })
+    .await
+    .unwrap_or(false);
+    let Some(auth) = &state.auth else {
+        return error(StatusCode::NOT_FOUND, "this install has no login");
+    };
+    if !ok {
+        return error(StatusCode::UNAUTHORIZED, "wrong user name or password");
+    }
+    let cookie = auth.start(&l.user);
+    (
+        [(header::SET_COOKIE, cookie)],
+        Json(Me { user: Some(l.user) }),
+    )
+        .into_response()
+}
+
+async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    match &state.auth {
+        Some(auth) => (
+            [(header::SET_COOKIE, auth.end(&headers))],
+            Json(Me { user: None }),
+        )
+            .into_response(),
+        None => Json(Me { user: None }).into_response(),
+    }
+}
+
+async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let user = state.auth.as_ref().and_then(|a| a.user(&headers));
+    Json(Me { user }).into_response()
+}
+
+// ---------- stats and listing ----------
+
 #[derive(Serialize)]
 pub struct Stats {
+    pub backend: &'static str,
     pub files: u64,
     pub logical_bytes: u64,
-    pub unique_blocks: u64,
-    pub unique_bytes: u64,
-    /// Bytes not stored again because a block was already there.
-    pub dedup_saved_bytes: u64,
-    pub replicas: u32,
-    /// What the storage nodes hold on disk, summed.
-    pub raw_bytes: u64,
+    /// Satchel only: distinct blocks and their bytes.
+    pub unique_blocks: Option<u64>,
+    pub unique_bytes: Option<u64>,
+    /// Satchel only: bytes not stored again because a block was already there.
+    pub dedup_saved_bytes: Option<u64>,
+    pub replicas: Option<u32>,
+    /// Satchel only: what the storage nodes hold on disk, summed. S3 doesn't
+    /// say how many copies it keeps or where.
+    pub raw_bytes: Option<u64>,
     pub nodes: Vec<NodeUsage>,
 }
 
-async fn stats(State(state): State<Arc<AppState>>) -> Response {
-    let totals = match state.manifest.totals() {
-        Ok(t) => t,
-        Err(e) => return internal(e),
-    };
-    let nodes = state.client.node_usage().await;
-    Json(Stats {
-        files: totals.files,
-        logical_bytes: totals.logical_bytes,
-        unique_blocks: totals.unique_blocks,
-        unique_bytes: totals.unique_bytes,
-        dedup_saved_bytes: totals.logical_bytes.saturating_sub(totals.unique_bytes),
-        replicas: REPLICAS,
-        raw_bytes: nodes.iter().map(|n| n.bytes).sum(),
-        nodes,
-    })
-    .into_response()
+async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Some(r) = state.deny(&headers) {
+        return r;
+    }
+    match &state.backend {
+        Backend::Satchel { client, manifest } => {
+            let totals = match manifest.totals() {
+                Ok(t) => t,
+                Err(e) => return internal(e),
+            };
+            let nodes = client.node_usage().await;
+            Json(Stats {
+                backend: "satchel",
+                files: totals.files,
+                logical_bytes: totals.logical_bytes,
+                unique_blocks: Some(totals.unique_blocks),
+                unique_bytes: Some(totals.unique_bytes),
+                dedup_saved_bytes: Some(totals.logical_bytes.saturating_sub(totals.unique_bytes)),
+                replicas: Some(REPLICAS),
+                raw_bytes: Some(nodes.iter().map(|n| n.bytes).sum()),
+                nodes,
+            })
+            .into_response()
+        }
+        Backend::S3(store) => match store.list().await {
+            Ok(files) => Json(Stats {
+                backend: "s3",
+                files: files.len() as u64,
+                logical_bytes: files.iter().map(|f| f.size).sum(),
+                unique_blocks: None,
+                unique_bytes: None,
+                dedup_saved_bytes: None,
+                replicas: None,
+                raw_bytes: None,
+                nodes: Vec::new(),
+            })
+            .into_response(),
+            Err(e) => internal(e),
+        },
+    }
 }
 
-async fn list(State(state): State<Arc<AppState>>) -> Response {
-    match state.manifest.list() {
+async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Some(r) = state.deny(&headers) {
+        return r;
+    }
+    let files = match &state.backend {
+        Backend::Satchel { manifest, .. } => manifest.list(),
+        Backend::S3(store) => store.list().await,
+    };
+    match files {
         Ok(files) => Json(files).into_response(),
         Err(e) => internal(e),
     }
 }
+
+// ---------- upload ----------
 
 #[derive(Deserialize)]
 struct UploadQuery {
     name: Option<String>,
 }
 
-/// What one upload did, for the website's live counters.
+/// What one upload to Satchel did, for the website's live counters.
 #[derive(Serialize)]
 pub struct UploadReport {
+    pub backend: &'static str,
     pub file: FileRecord,
     pub blocks: u64,
     /// Blocks Satchel had to write. The rest were already stored.
@@ -258,15 +409,92 @@ pub struct UploadReport {
     pub millis: u64,
 }
 
+/// What one upload to S3 did: one object, however big.
+#[derive(Serialize)]
+pub struct S3UploadReport {
+    pub backend: &'static str,
+    pub file: FileRecord,
+    pub objects: u64,
+    pub bytes: u64,
+    pub millis: u64,
+}
+
 async fn upload(
     State(state): State<Arc<AppState>>,
     Query(q): Query<UploadQuery>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if let Some(r) = state.deny(&headers) {
+        return r;
+    }
+    let name = clean_name(q.name.as_deref());
+    match &state.backend {
+        Backend::Satchel { client, manifest } => {
+            upload_satchel(client, manifest, &state.config.limits, &name, body).await
+        }
+        Backend::S3(store) => upload_s3(store, &state.config.limits, &name, &headers, body).await,
+    }
+}
+
+async fn upload_s3(
+    store: &s3::S3Store,
+    limits: &Limits,
+    name: &str,
+    headers: &HeaderMap,
     body: Body,
 ) -> Response {
     let started = Instant::now();
-    let name = clean_name(q.name.as_deref());
-    let limits = &state.config.limits;
-    let used = match state.manifest.totals() {
+    let Some(size) = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+    else {
+        return error(
+            StatusCode::LENGTH_REQUIRED,
+            "send the file with a Content-Length",
+        );
+    };
+    if limits.max_file_bytes.is_some_and(|max| size > max) {
+        return error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the file is over the size limit",
+        );
+    }
+    if let Some(max) = limits.max_total_bytes {
+        let used: u64 = match store.list().await {
+            Ok(files) => files.iter().map(|f| f.size).sum(),
+            Err(e) => return internal(e),
+        };
+        if used + size > max {
+            return error(StatusCode::INSUFFICIENT_STORAGE, "storage is full");
+        }
+    }
+    match store.put(name, size, body.into_data_stream()).await {
+        Ok(file) => (
+            StatusCode::CREATED,
+            Json(S3UploadReport {
+                backend: "s3",
+                objects: 1,
+                bytes: file.size,
+                millis: started.elapsed().as_millis() as u64,
+                file,
+            }),
+        )
+            .into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+async fn upload_satchel(
+    client: &SatchelClient,
+    manifest: &Manifest,
+    limits: &Limits,
+    name: &str,
+    body: Body,
+) -> Response {
+    let started = Instant::now();
+    let used = match manifest.totals() {
         Ok(t) => t.logical_bytes,
         Err(e) => return internal(e),
     };
@@ -278,14 +506,11 @@ async fn upload(
     let mut blocks: Vec<(String, u64)> = Vec::new();
     let (mut new_blocks, mut new_bytes) = (0u64, 0u64);
 
-    let store = |block: Vec<u8>| {
-        let state = state.clone();
-        async move {
-            let hash = BlockHash::of(&block).to_string();
-            let len = block.len() as u64;
-            let written = state.client.put_block(&hash, Bytes::from(block)).await?;
-            anyhow::Ok((hash, len, written))
-        }
+    let store = |block: Vec<u8>| async move {
+        let hash = BlockHash::of(&block).to_string();
+        let len = block.len() as u64;
+        let written = client.put_block(&hash, Bytes::from(block)).await?;
+        anyhow::Ok((hash, len, written))
     };
 
     loop {
@@ -341,14 +566,12 @@ async fn upload(
     }
 
     let sha256 = hex::encode(whole.finalize());
-    let file = match state
-        .manifest
-        .add_file(&name, size, &sha256, now_secs(), &blocks)
-    {
+    let file = match manifest.add_file(name, size, &sha256, now_secs(), &blocks) {
         Ok(f) => f,
         Err(e) => return internal(e),
     };
     let report = UploadReport {
+        backend: "satchel",
         blocks: blocks.len() as u64,
         new_blocks,
         dedup_blocks: blocks.len() as u64 - new_blocks,
@@ -361,6 +584,8 @@ async fn upload(
     (StatusCode::CREATED, Json(report)).into_response()
 }
 
+// ---------- one file ----------
+
 #[derive(Serialize)]
 struct FileDetail {
     #[serde(flatten)]
@@ -368,23 +593,57 @@ struct FileDetail {
     block_list: Vec<manifest::BlockRef>,
 }
 
-async fn file(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Response {
-    match state.manifest.get(id) {
+async fn file(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Response {
+    if let Some(r) = state.deny(&headers) {
+        return r;
+    }
+    let found = match &state.backend {
+        Backend::Satchel { manifest, .. } => manifest.get(id),
+        Backend::S3(store) => store
+            .find(id)
+            .await
+            .map(|f| f.map(|(_, file)| (file, Vec::new()))),
+    };
+    match found {
         Ok(Some((file, block_list))) => Json(FileDetail { file, block_list }).into_response(),
         Ok(None) => error(StatusCode::NOT_FOUND, "no such file"),
         Err(e) => internal(e),
     }
 }
 
-/// Streams the file back, block by block, each checked against its hash by
-/// the frontend before it leaves Satchel.
-async fn content(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Response {
-    let (file, blocks) = match state.manifest.get(id) {
+/// Satchel: streams the file back block by block, each checked against its
+/// hash by the frontend. S3: redirects to a short-lived download URL.
+async fn content(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Response {
+    if let Some(r) = state.deny(&headers) {
+        return r;
+    }
+    let (client, manifest) = match &state.backend {
+        Backend::Satchel { client, manifest } => (client, manifest),
+        Backend::S3(store) => {
+            return match store.find(id).await {
+                Ok(Some((key, file))) => match store.download_url(&key, &file.name).await {
+                    Ok(url) => Redirect::to(&url).into_response(),
+                    Err(e) => internal(e),
+                },
+                Ok(None) => error(StatusCode::NOT_FOUND, "no such file"),
+                Err(e) => internal(e),
+            }
+        }
+    };
+    let (file, blocks) = match manifest.get(id) {
         Ok(Some(found)) => found,
         Ok(None) => return error(StatusCode::NOT_FOUND, "no such file"),
         Err(e) => return internal(e),
     };
-    let client = state.client.clone();
+    let client = client.clone();
     let stream = futures_util::stream::iter(blocks).then(move |b| {
         let client = client.clone();
         async move {
@@ -410,18 +669,43 @@ async fn content(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Res
 #[derive(Serialize)]
 struct Removed {
     id: i64,
-    /// Blocks no other file used, now dropped from Satchel's index.
+    /// Blocks no other file used, now dropped from Satchel's index. Always 0
+    /// for S3, which deletes the whole object.
     released_blocks: u64,
 }
 
-async fn remove(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Response {
-    let orphans = match state.manifest.remove(id) {
+async fn remove(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Response {
+    if let Some(r) = state.deny(&headers) {
+        return r;
+    }
+    let (client, manifest) = match &state.backend {
+        Backend::Satchel { client, manifest } => (client, manifest),
+        Backend::S3(store) => {
+            return match store.find(id).await {
+                Ok(Some((key, _))) => match store.delete(&key).await {
+                    Ok(()) => Json(Removed {
+                        id,
+                        released_blocks: 0,
+                    })
+                    .into_response(),
+                    Err(e) => internal(e),
+                },
+                Ok(None) => error(StatusCode::NOT_FOUND, "no such file"),
+                Err(e) => internal(e),
+            }
+        }
+    };
+    let orphans = match manifest.remove(id) {
         Ok(Some(o)) => o,
         Ok(None) => return error(StatusCode::NOT_FOUND, "no such file"),
         Err(e) => return internal(e),
     };
     for hash in &orphans {
-        if let Err(e) = state.client.delete_block(hash).await {
+        if let Err(e) = client.delete_block(hash).await {
             // The file is gone from the manifest either way. A block left in
             // the index only costs space, like Magic Pocket without
             // compaction (DDL-013).
