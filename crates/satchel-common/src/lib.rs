@@ -3,6 +3,7 @@
 pub mod block;
 pub mod cluster;
 pub mod ec;
+pub mod metrics;
 pub mod service;
 
 pub use block::BlockHash;
