@@ -8,6 +8,7 @@ members = [
     "crates/satchel-verifier",
     "crates/satchel-it",
     "crates/satchel-bench",
+    "crates/satchel-cost",
 ]
 
 [workspace.package]
