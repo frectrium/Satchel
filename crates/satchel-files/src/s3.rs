@@ -18,7 +18,8 @@ const SIGN_FOR: Duration = Duration::from_secs(300);
 
 enum Creds {
     Static(Credentials),
-    /// The instance role, from IMDSv2, refreshed every 30 minutes.
+    /// The instance role, from IMDSv2, refreshed a few minutes before the
+    /// credentials expire.
     Instance {
         imds: String,
         cached: Mutex<Option<(Credentials, Instant)>>,
@@ -71,13 +72,13 @@ impl S3Store {
         match &self.creds {
             Creds::Static(c) => Ok(c.clone()),
             Creds::Instance { imds, cached } => {
-                if let Some((c, at)) = cached.lock().expect("lock").as_ref() {
-                    if at.elapsed() < Duration::from_secs(1800) {
+                if let Some((c, refresh_at)) = cached.lock().expect("lock").as_ref() {
+                    if Instant::now() < *refresh_at {
                         return Ok(c.clone());
                     }
                 }
-                let fresh = instance_credentials(&self.http, imds).await?;
-                *cached.lock().expect("lock") = Some((fresh.clone(), Instant::now()));
+                let (fresh, refresh_at) = instance_credentials(&self.http, imds).await?;
+                *cached.lock().expect("lock") = Some((fresh.clone(), refresh_at));
                 Ok(fresh)
             }
         }
@@ -239,13 +240,31 @@ pub fn record_from_key(key: &str, size: u64) -> Option<FileRecord> {
     })
 }
 
-async fn instance_credentials(http: &reqwest::Client, imds: &str) -> anyhow::Result<Credentials> {
+/// When to fetch new credentials: 5 minutes before `expiration`, or in a
+/// minute if that's sooner or the time doesn't parse.
+pub fn refresh_time(expiration: &str, now: jiff::Timestamp) -> Instant {
+    let left = expiration
+        .parse::<jiff::Timestamp>()
+        .ok()
+        .and_then(|exp| exp.duration_since(now).try_into().ok())
+        .unwrap_or(Duration::ZERO);
+    Instant::now()
+        + left
+            .saturating_sub(Duration::from_secs(300))
+            .max(Duration::from_secs(60))
+}
+
+async fn instance_credentials(
+    http: &reqwest::Client,
+    imds: &str,
+) -> anyhow::Result<(Credentials, Instant)> {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "PascalCase")]
     struct RoleCreds {
         access_key_id: String,
         secret_access_key: String,
         token: String,
+        expiration: String,
     }
     let token = http
         .put(format!("{imds}/latest/api/token"))
@@ -276,10 +295,10 @@ async fn instance_credentials(http: &reqwest::Client, imds: &str) -> anyhow::Res
         .error_for_status()?
         .json()
         .await?;
-    Ok(Credentials::new_with_token(
-        c.access_key_id,
-        c.secret_access_key,
-        c.token,
+    let refresh_at = refresh_time(&c.expiration, jiff::Timestamp::now());
+    Ok((
+        Credentials::new_with_token(c.access_key_id, c.secret_access_key, c.token),
+        refresh_at,
     ))
 }
 
@@ -297,6 +316,18 @@ mod tests {
             (1_794_760_000_123_456, "report v2.pdf", 10)
         );
         assert_eq!(f.created_at, 1_794_760_000);
+    }
+
+    #[test]
+    fn credentials_refresh_five_minutes_before_they_expire() {
+        let now: jiff::Timestamp = "2026-11-16T00:00:00Z".parse().unwrap();
+        let soon = |exp: &str| refresh_time(exp, now).saturating_duration_since(Instant::now());
+        let in_six_hours = soon("2026-11-16T06:00:00Z");
+        assert!(in_six_hours > Duration::from_secs(6 * 3600 - 310));
+        assert!(in_six_hours <= Duration::from_secs(6 * 3600 - 300));
+        // Close to expiry, or unparseable: try again in a minute.
+        assert!(soon("2026-11-16T00:02:00Z") <= Duration::from_secs(60));
+        assert!(soon("not a time") <= Duration::from_secs(60));
     }
 
     #[test]

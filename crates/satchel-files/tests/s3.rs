@@ -196,6 +196,24 @@ async fn everything_but_info_needs_a_login() {
 }
 
 #[tokio::test]
+async fn repeated_wrong_passwords_are_slowed_down() {
+    let h = harness(Limits::default()).await;
+    for _ in 0..3 {
+        assert_eq!(h.login("wrong password").await, 401);
+    }
+    // The next attempt has to wait, even with the right password.
+    let r = h
+        .http
+        .post(format!("{}/v1/login", h.url))
+        .json(&serde_json::json!({"user": "admin", "password": PASSWORD}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 429);
+    assert!(r.headers().contains_key("retry-after"));
+}
+
+#[tokio::test]
 async fn a_file_is_one_whole_object() {
     let h = harness(Limits::default()).await;
     h.login(PASSWORD).await;

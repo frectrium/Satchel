@@ -7,13 +7,20 @@ for the viva hour.
 | File | What it creates |
 |---|---|
 | `storage.tf` | Two private buckets: the static site (read by CloudFront only) and the files admins upload |
-| `backend.tf` | One `t4g.small` running `satchel-files` with `SATCHEL_BACKEND=s3`, reachable only from CloudFront, with an Elastic IP |
-| `cdn.tf` | One CloudFront distribution: the site from S3, `/api/*` to the backend, HTTPS on a `*.cloudfront.net` address |
+| `backend.tf` | One `t4g.small` running `satchel-files` with `SATCHEL_BACKEND=s3` in a private subnet: no public IP, no internet route, S3 through a gateway endpoint and Session Manager through interface endpoints |
+| `cdn.tf` | One CloudFront distribution: the site from S3, and `/api/*` to the backend through a CloudFront VPC origin, so that hop stays on AWS's network. HTTPS on a `*.cloudfront.net` address |
 | `budget.tf` | A monthly budget counted before credits: email at 80%, and the backend instance stopped automatically at 100% |
 
 Uploads to S3 are limited to 100 MiB per file and 2 GiB in total, and only
 admins can upload, list or delete. Anyone can use the calculator and a local
-Satchel install.
+Satchel install. At most two password checks run at once, and after three
+wrong passwords for a user name each attempt has to wait, doubling up to a
+minute.
+
+**The budget covers the whole account, but stops only this stack's backend.**
+If the viva cluster in `infra/` is up at the same time, its cost counts toward
+the $50 and it keeps running past it. Tear it down with `terraform destroy`
+straight after each use.
 
 ## Admin login
 

@@ -4,7 +4,7 @@
 //! SameSite=Strict cookie. The local install has no login.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -14,12 +14,23 @@ use axum::http::{header, HeaderMap};
 pub const COOKIE: &str = "satchel_session";
 const SESSION_FOR: Duration = Duration::from_secs(12 * 3600);
 
+/// Password checks allowed at the same time. Each Argon2id run takes about
+/// 19 MiB, so this caps memory on a small instance and paces guessing.
+pub const MAX_CONCURRENT_CHECKS: usize = 2;
+/// Wrong passwords for one user name before each attempt has to wait.
+const FREE_FAILURES: u32 = 3;
+/// The wait doubles with every further failure, up to this.
+const MAX_WAIT: Duration = Duration::from_secs(60);
+
 pub struct Auth {
     /// User name to Argon2 PHC string.
     users: HashMap<String, String>,
     sessions: Mutex<HashMap<String, (String, Instant)>>,
     /// Send the cookie with `Secure`. Off only for plain-HTTP tests.
     secure: bool,
+    checks: Arc<tokio::sync::Semaphore>,
+    /// Failed attempts per user name: how many, and when the last one was.
+    failures: Mutex<HashMap<String, (u32, Instant)>>,
 }
 
 impl Auth {
@@ -41,7 +52,39 @@ impl Auth {
             users,
             sessions: Mutex::new(HashMap::new()),
             secure,
+            checks: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_CHECKS)),
+            failures: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// A slot to run one password check, or `None` if the others are busy.
+    pub fn check_slot(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.checks.clone().try_acquire_owned().ok()
+    }
+
+    /// How long this user name must wait before the next attempt.
+    pub fn retry_after(&self, user: &str) -> Option<Duration> {
+        let failures = self.failures.lock().expect("lock");
+        let (count, last) = failures.get(user)?;
+        let wait = wait_after(*count);
+        let since = last.elapsed();
+        (since < wait).then(|| wait - since)
+    }
+
+    /// Records the result of a check: success clears the user's failures.
+    pub fn record(&self, user: &str, ok: bool) {
+        let mut failures = self.failures.lock().expect("lock");
+        if ok {
+            failures.remove(user);
+            return;
+        }
+        // Forget old failures so the map can't grow without bound.
+        failures.retain(|_, (_, at)| at.elapsed() < Duration::from_secs(3600));
+        let entry = failures
+            .entry(user.to_owned())
+            .or_insert((0, Instant::now()));
+        entry.0 += 1;
+        entry.1 = Instant::now();
     }
 
     /// Checks a password. Every attempt runs Argon2, so a wrong user name
@@ -93,6 +136,15 @@ impl Auth {
             if self.secure { "; Secure" } else { "" }
         )
     }
+}
+
+/// No wait for the first few failures, then 1 s, 2 s, 4 s... up to a minute.
+fn wait_after(failures: u32) -> Duration {
+    if failures < FREE_FAILURES {
+        return Duration::ZERO;
+    }
+    let exp = (failures - FREE_FAILURES).min(16);
+    Duration::from_secs(1u64 << exp).min(MAX_WAIT)
 }
 
 fn session_token(headers: &HeaderMap) -> Option<String> {
@@ -165,6 +217,42 @@ mod tests {
         let headers = with_cookie(&format!("{COOKIE}=deadbeef"));
         assert_eq!(a.user(&headers), None);
         assert_eq!(a.user(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn repeated_failures_make_the_next_attempt_wait() {
+        let a = auth();
+        for _ in 0..FREE_FAILURES {
+            assert_eq!(a.retry_after("admin"), None);
+            a.record("admin", false);
+        }
+        // The third failure already makes the next attempt wait a second.
+        let wait = a.retry_after("admin").expect("a wait after 3 failures");
+        assert!(wait <= Duration::from_secs(1));
+        assert_eq!(a.retry_after("someone-else"), None);
+        a.record("admin", true);
+        assert_eq!(a.retry_after("admin"), None);
+    }
+
+    #[test]
+    fn waits_double_up_to_a_minute() {
+        assert_eq!(wait_after(2), Duration::ZERO);
+        assert_eq!(wait_after(3), Duration::from_secs(1));
+        assert_eq!(wait_after(4), Duration::from_secs(2));
+        assert_eq!(wait_after(8), Duration::from_secs(32));
+        assert_eq!(wait_after(9), Duration::from_secs(60));
+        assert_eq!(wait_after(500), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn only_a_few_checks_run_at_once() {
+        let a = auth();
+        let held: Vec<_> = (0..MAX_CONCURRENT_CHECKS)
+            .map(|_| a.check_slot().unwrap())
+            .collect();
+        assert!(a.check_slot().is_none());
+        drop(held);
+        assert!(a.check_slot().is_some());
     }
 
     #[test]

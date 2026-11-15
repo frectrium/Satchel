@@ -1,5 +1,22 @@
 # One HTTPS address for everything: the static site from S3, and /api/* to
-# the backend instance. Same origin, so the login cookie needs no CORS.
+# the backend instance through a VPC origin, so that leg stays on AWS's
+# network and the instance has no public address. Same origin, so the login
+# cookie needs no CORS.
+
+resource "aws_cloudfront_vpc_origin" "backend" {
+  vpc_origin_endpoint_config {
+    name                   = "satchel-web-backend"
+    arn                    = aws_instance.backend.arn
+    http_port              = 47800
+    https_port             = 443
+    origin_protocol_policy = "http-only"
+
+    origin_ssl_protocols {
+      items    = ["TLSv1.2"]
+      quantity = 1
+    }
+  }
+}
 
 resource "aws_cloudfront_origin_access_control" "site" {
   name                              = "satchel-site"
@@ -29,13 +46,10 @@ resource "aws_cloudfront_distribution" "site" {
 
   origin {
     origin_id   = "api"
-    domain_name = aws_eip.backend.public_dns
-    custom_origin_config {
-      http_port              = 47800
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-      origin_read_timeout    = 60
+    domain_name = aws_instance.backend.private_dns
+    vpc_origin_config {
+      vpc_origin_id       = aws_cloudfront_vpc_origin.backend.id
+      origin_read_timeout = 60
     }
   }
 

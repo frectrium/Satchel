@@ -267,13 +267,32 @@ struct Me {
 }
 
 async fn login(State(state): State<Arc<AppState>>, Json(l): Json<Login>) -> Response {
-    if state.auth.is_none() {
+    let Some(auth) = &state.auth else {
         return error(StatusCode::NOT_FOUND, "this install has no login");
+    };
+    if let Some(wait) = auth.retry_after(&l.user) {
+        let secs = wait.as_secs().max(1);
+        return (
+            [(header::RETRY_AFTER, secs.to_string())],
+            error(
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("too many wrong passwords, try again in {secs} s"),
+            ),
+        )
+            .into_response();
     }
-    // Argon2 is deliberately slow, so it runs off the async workers.
+    // At most a couple of Argon2 runs at once (memory and guessing), each on
+    // the blocking pool since it's deliberately slow.
+    let Some(slot) = auth.check_slot() else {
+        return error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many sign-ins at once, try again in a moment",
+        );
+    };
     let checker = state.clone();
     let user = l.user.clone();
     let ok = tokio::task::spawn_blocking(move || {
+        let _slot = slot;
         checker
             .auth
             .as_ref()
@@ -281,9 +300,7 @@ async fn login(State(state): State<Arc<AppState>>, Json(l): Json<Login>) -> Resp
     })
     .await
     .unwrap_or(false);
-    let Some(auth) = &state.auth else {
-        return error(StatusCode::NOT_FOUND, "this install has no login");
-    };
+    auth.record(&l.user, ok);
     if !ok {
         return error(StatusCode::UNAUTHORIZED, "wrong user name or password");
     }
