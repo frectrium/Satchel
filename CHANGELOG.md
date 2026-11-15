@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.1.0, 2026-11-16
+
+The Satchel website: store files on AWS S3 (rent) or on Satchel running on your own computer (own), and see what each does with them and what it costs.
+
+### Website
+- **React site** (`web/app`, React, Vite, TypeScript): home, store files, my files, the calculator and a "How it works" section built from the reports with source IDs. Light and dark mode, phone width
+- **Store on your own Satchel**: the page finds a local install on 127.0.0.1:47800, or shows the one-line install command. Uploads show the file's blocks, deduplicated blocks and the copies landing in each zone
+- **Live costs**: the monthly cost of exactly the stored files on S3 and on Satchel on-prem, and a slider that scales the data up to the break-even point, from the same Rust cost engine compiled to WASM
+- **Pricing calculator** (`satchel-calc`, `web/calculator`): the cost engine in the browser, matching the CLI exactly
+
+### Files service
+- **S3 backend** (`SATCHEL_BACKEND=s3`): each file is one object in S3, with 100 MiB per file and 2 GiB in total
+- **Admin login** for S3: Argon2id hashes in SSM (`scripts/set-admin.sh`), HttpOnly, Secure, SameSite=Strict session cookies, at most 2 password checks at once and a growing wait after repeated wrong passwords
+
+### AWS
+- **Website stack** (`infra/web`): private S3 buckets, CloudFront for the site and the API, the backend in a private subnet behind a CloudFront VPC origin, and a $50 monthly budget that stops the backend
+
 ## v1.0.0, 2026-11-16
 
 The Satchel storage system: a pocket-sized Magic Pocket, with every design decision traced to a source in the [Design Decision Log](docs/design/decision-log.md).

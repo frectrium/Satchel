@@ -221,7 +221,7 @@ Satchel/
 
 ## Status
 
-**v1.0.0**, the storage system the final report and viva (#29) describe. See [CHANGELOG.md](CHANGELOG.md).
+**v1.1.0**: the storage system (v1.0.0) plus the website, where you can store files on S3 or on your own Satchel and compare the costs. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Done
 
@@ -235,7 +235,6 @@ Satchel/
 
 ### Next
 
-- **v1.1:** the Satchel website: upload to S3 or to a local install, live cost of what's stored, the pricing calculator and a docs section
 - Reads from erasure-coded volumes (#70), horizontal scaling (#73) and the scaling experiment (#75)
 
 ## Roadmap
