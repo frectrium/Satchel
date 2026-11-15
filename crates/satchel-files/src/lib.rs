@@ -184,24 +184,43 @@ fn internal(e: anyhow::Error) -> Response {
     error(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}"))
 }
 
-/// A file name safe to store and to send back in a header: the last path
-/// part, without control characters or quotes, at most 255 characters.
+/// A file name safe to store: a relative path such as `photos/2024/a.jpg`
+/// when a folder is uploaded. Backslashes become `/`; empty, `.` and `..`
+/// parts are dropped, so a name can never point outside its folder; control
+/// characters and quotes are removed. Each part is at most 255 characters and
+/// the whole name at most 1,024.
 pub fn clean_name(raw: Option<&str>) -> String {
-    let base = raw
+    let parts: Vec<String> = raw
         .unwrap_or("")
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or("")
-        .chars()
-        .filter(|c| !c.is_control() && *c != '"')
-        .take(255)
-        .collect::<String>();
-    let base = base.trim();
-    if base.is_empty() || base == "." || base == ".." {
+        .split(['/', '\\'])
+        .map(|part| {
+            part.chars()
+                .filter(|c| !c.is_control() && *c != '"')
+                .take(255)
+                .collect::<String>()
+                .trim()
+                .to_owned()
+        })
+        .filter(|part| !part.is_empty() && part != "." && part != "..")
+        .collect();
+    let mut name = parts.join("/");
+    if name.len() > 1024 {
+        let mut cut = 1024;
+        while !name.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        name.truncate(cut);
+    }
+    if name.is_empty() {
         "untitled".to_owned()
     } else {
-        base.to_owned()
+        name
     }
+}
+
+/// The last part of a name, for download headers.
+pub fn base_name(name: &str) -> &str {
+    name.rsplit('/').next().unwrap_or(name)
 }
 
 // ---------- info and login ----------
@@ -670,7 +689,7 @@ async fn content(
                 .map_err(|e| std::io::Error::other(format!("block {}: {e}", b.index)))
         }
     });
-    let disposition = format!("attachment; filename=\"{}\"", file.name);
+    let disposition = format!("attachment; filename=\"{}\"", base_name(&file.name));
     Response::builder()
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(header::CONTENT_LENGTH, file.size)
@@ -742,15 +761,28 @@ mod tests {
 
     #[test]
     fn names_lose_paths_and_quotes() {
-        assert_eq!(clean_name(Some("../../etc/passwd")), "passwd");
+        assert_eq!(clean_name(Some("../../etc/passwd")), "etc/passwd");
         assert_eq!(
             clean_name(Some("C:\\x\\report \"v2\".pdf")),
-            "report v2.pdf"
+            "C:/x/report v2.pdf"
         );
         assert_eq!(clean_name(Some("a\nb")), "ab");
         assert_eq!(clean_name(None), "untitled");
         assert_eq!(clean_name(Some("..")), "untitled");
+        assert_eq!(clean_name(Some("/./")), "untitled");
         assert_eq!(clean_name(Some(&"x".repeat(300))).len(), 255);
+        assert!(clean_name(Some(&"abc/".repeat(400))).len() <= 1024);
+    }
+
+    #[test]
+    fn folder_paths_are_kept() {
+        assert_eq!(clean_name(Some("photos/2024/a.jpg")), "photos/2024/a.jpg");
+        assert_eq!(
+            clean_name(Some("photos//2024/./a.jpg")),
+            "photos/2024/a.jpg"
+        );
+        assert_eq!(base_name("photos/2024/a.jpg"), "a.jpg");
+        assert_eq!(base_name("a.jpg"), "a.jpg");
     }
 
     #[test]

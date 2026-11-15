@@ -65,10 +65,10 @@ export async function localIsUp(): Promise<boolean> {
 }
 
 /** Uploads with progress events, which fetch() can't report. */
-export function upload(target: Target, file: File, onProgress: (f: number) => void): Promise<UploadReport> {
+export function upload(target: Target, file: File, onProgress: (f: number) => void, name = file.name): Promise<UploadReport> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${base(target)}/v1/files?name=${encodeURIComponent(file.name)}`);
+    xhr.open("POST", `${base(target)}/v1/files?name=${encodeURIComponent(name)}`);
     xhr.withCredentials = target === "aws";
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
     xhr.onload = () => {
@@ -77,7 +77,7 @@ export function upload(target: Target, file: File, onProgress: (f: number) => vo
       if (xhr.status === 201) resolve(body as UploadReport);
       else reject(new ApiError(body.error ?? `HTTP ${xhr.status}`, xhr.status));
     };
-    xhr.onerror = () => reject(new ApiError(target === "local" ? "Couldn't reach your Satchel. Is it still running?" : "Network error", 0));
+    xhr.onerror = () => reject(new ApiError(target === "local" ? "Couldn't reach your Satchel. Is it still running? (satchel status)" : "Network error", 0));
     xhr.send(file);
   });
 }

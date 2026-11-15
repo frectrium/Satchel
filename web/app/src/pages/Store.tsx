@@ -5,6 +5,7 @@ import {
   type FilesCost, type Info, type ScaleResult, type Stats, type Target, type UploadReport,
 } from "../lib/core";
 import { Arrow, Card, Counter, Icon, Segmented, fadeUp } from "../components/ui";
+import { fromDrop, fromInput, type Picked } from "../lib/picked";
 
 export function LoginCard({ onSignedIn }: { onSignedIn: (user: string) => void }) {
   const [user, setUser] = useState("admin");
@@ -65,7 +66,8 @@ export function InstallCard() {
   );
 }
 
-type Job = { id: number; file: File; progress: number; report?: UploadReport; error?: string };
+type Job = { id: number; file: File; path: string; progress: number; report?: UploadReport; error?: string };
+type Batch = { label: string; total: number; done: number; failed: number };
 
 function UploadItem({ job, target }: { job: Job; target: Target }) {
   const r = job.report;
@@ -74,7 +76,7 @@ function UploadItem({ job, target }: { job: Job; target: Target }) {
       className={`card upload ${target === "aws" ? "rent" : "own"}`}>
       <div className="upload-top">
         <div className="file-icon" style={{ width: 28, height: 34 }} />
-        <div className="upload-name">{job.file.name}</div>
+        <div className="upload-name" title={job.path}>{job.path}</div>
         <span className="muted small">{bytes(job.file.size)}</span>
       </div>
       {!r && !job.error && (
@@ -236,8 +238,12 @@ function Workspace({ target, onUnauthorized }: { target: Target; onUnauthorized:
   const [stats, setStats] = useState<Stats | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [over, setOver] = useState(false);
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [note, setNote] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const next = useRef(0);
+  const busy = useRef(false);
 
   const refresh = useCallback(async () => {
     try { setStats(await api<Stats>(target, "/v1/stats")); }
@@ -246,25 +252,41 @@ function Workspace({ target, onUnauthorized }: { target: Target; onUnauthorized:
 
   useEffect(() => { api<Info>(target, "/v1/info").then(setInfo).catch(() => {}); refresh(); }, [target, refresh]);
 
-  const run = async (files: File[]) => {
-    for (const file of files) {
+  const run = async (pending: Promise<Picked[]> | Picked[]) => {
+    setNote("");
+    let picked: Picked[];
+    try { picked = await pending; } catch { setNote("Couldn't read that folder."); return; }
+    if (picked.length === 0) { setNote("Nothing to upload: the folder is empty."); return; }
+    if (busy.current) { setNote("Wait for the current uploads to finish."); return; }
+    busy.current = true;
+    const folder = picked.length > 1 && picked[0].path.includes("/") ? picked[0].path.split("/")[0] : null;
+    const label = folder ? `${folder}/` : picked.length > 1 ? `${picked.length} files` : picked[0].path;
+    let done = 0, failed = 0;
+    if (picked.length > 1) setBatch({ label, total: picked.length, done, failed });
+    for (const { file, path } of picked) {
       const id = next.current++;
-      setJobs((j) => [{ id, file, progress: 0 }, ...j].slice(0, 12));
+      setJobs((j) => [{ id, file, path, progress: 0 }, ...j].slice(0, 12));
       const patch = (p: Partial<Job>) => setJobs((j) => j.map((x) => (x.id === id ? { ...x, ...p } : x)));
       if (info?.max_file_bytes && file.size > info.max_file_bytes) {
         patch({ error: `Too big: the limit is ${ibytes(info.max_file_bytes)} per file` });
-        continue;
+        failed += 1;
+      } else {
+        try {
+          const report = await upload(target, file, (progress) => patch({ progress }), path);
+          patch({ report, progress: 1 });
+          done += 1;
+        } catch (e) {
+          const err = e as ApiError;
+          patch({ error: err.message });
+          failed += 1;
+          if (err.status === 401) { onUnauthorized(); break; }
+        }
       }
-      try {
-        const report = await upload(target, file, (progress) => patch({ progress }));
-        patch({ report, progress: 1 });
-        await refresh();
-      } catch (e) {
-        const err = e as ApiError;
-        patch({ error: err.message });
-        if (err.status === 401) onUnauthorized();
-      }
+      if (picked.length > 1) setBatch({ label, total: picked.length, done, failed });
+      if ((done + failed) % 5 === 0) refresh();
     }
+    busy.current = false;
+    await refresh();
   };
 
   return (
@@ -273,15 +295,35 @@ function Workspace({ target, onUnauthorized }: { target: Target; onUnauthorized:
         <motion.label className={`drop ${over ? "over" : ""}`} tabIndex={0}
           whileHover={{ scale: 1.005 }} animate={{ scale: over ? 1.015 : 1 }}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); run([...e.dataTransfer.files]); }}
+          onDrop={(e) => { e.preventDefault(); setOver(false); run(fromDrop(e.dataTransfer)); }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") input.current?.click(); }}>
-          <input ref={input} type="file" multiple hidden onChange={(e) => { run([...(e.target.files ?? [])]); e.target.value = ""; }} />
+          <input ref={input} type="file" multiple hidden onChange={(e) => { run(fromInput(e.target.files)); e.target.value = ""; }} />
           <motion.div className="drop-icon" animate={{ y: over ? -6 : 0 }}><Icon name="upload" size={26} /></motion.div>
-          <b>Drop files here, or click to choose</b>
+          <b>Drop files or folders here, or click to choose</b>
           <span className="muted small">
             {info?.max_file_bytes ? `Up to ${ibytes(info.max_file_bytes)} per file, ${ibytes(info.max_total_bytes ?? 0)} in total` : "No limits: it's your own disk"}
           </span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); folderInput.current?.click(); }}>
+            Choose a folder instead
+          </button>
         </motion.label>
+        <input ref={folderInput} type="file" multiple hidden {...({ webkitdirectory: "" } as Record<string, string>)}
+          onChange={(e) => { run(fromInput(e.target.files)); e.target.value = ""; }} />
+        <AnimatePresence>
+          {note && <motion.p className="muted small" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ margin: 0 }}>{note}</motion.p>}
+        </AnimatePresence>
+        <AnimatePresence>
+          {batch && (
+            <motion.div className="card upload" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <div className="upload-top">
+                <Icon name="file" size={18} />
+                <div className="upload-name">{batch.label}</div>
+                <span className="muted small">{batch.done + batch.failed} of {batch.total}{batch.failed ? ` · ${batch.failed} failed` : ""}</span>
+              </div>
+              <div className="progress"><motion.div animate={{ width: `${(100 * (batch.done + batch.failed)) / batch.total}%` }} /></div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <AnimatePresence initial={false}>
           {jobs.map((j) => <UploadItem key={j.id} job={j} target={target} />)}
         </AnimatePresence>

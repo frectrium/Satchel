@@ -184,6 +184,27 @@ async fn a_file_round_trips_through_blocks() {
 }
 
 #[tokio::test]
+async fn files_from_a_folder_keep_their_path() {
+    let h = harness(Limits::default()).await;
+    let (status, report) = h.upload("trip%2F2024%2Fbeach.jpg", b"sand").await;
+    assert_eq!(status, 201, "{report}");
+    assert_eq!(report["file"]["name"], "trip/2024/beach.jpg");
+    let id = report["file"]["id"].as_i64().unwrap();
+    let r = h
+        .http
+        .get(format!("{}/v1/files/{id}/content", h.url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r.headers()["content-disposition"],
+        "attachment; filename=\"beach.jpg\""
+    );
+    let (_, sneaky) = h.upload("..%2F..%2Fsecret.txt", b"x").await;
+    assert_eq!(sneaky["file"]["name"], "secret.txt");
+}
+
+#[tokio::test]
 async fn the_same_content_is_stored_once() {
     let h = harness(Limits::default()).await;
     let original = data(BLOCK_BYTES + 10, 2);

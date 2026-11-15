@@ -191,7 +191,7 @@ impl S3Store {
     pub async fn download_url(&self, key: &str, name: &str) -> anyhow::Result<String> {
         let creds = self.credentials().await?;
         let mut action = self.bucket.get_object(Some(&creds), key);
-        let disposition = format!("attachment; filename=\"{name}\"");
+        let disposition = format!("attachment; filename=\"{}\"", crate::base_name(name));
         action
             .query_mut()
             .insert("response-content-disposition", disposition);

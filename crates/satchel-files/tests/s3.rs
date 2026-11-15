@@ -285,6 +285,26 @@ async fn a_file_is_one_whole_object() {
 }
 
 #[tokio::test]
+async fn folder_paths_survive_in_s3_keys() {
+    let h = harness(Limits::default()).await;
+    h.login(PASSWORD).await;
+    let (status, report) = h.upload("trip%2F2024%2Fbeach.jpg", b"sand").await;
+    assert_eq!(status, 201, "{report}");
+    let key = h.objects.lock().unwrap().keys().next().unwrap().clone();
+    assert!(key.ends_with("/trip/2024/beach.jpg"), "{key}");
+    let files: Value = h
+        .http
+        .get(format!("{}/v1/files", h.url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(files[0]["name"], "trip/2024/beach.jpg");
+}
+
+#[tokio::test]
 async fn limits_hold_for_s3() {
     let h = harness(Limits {
         max_file_bytes: Some(1_000),
