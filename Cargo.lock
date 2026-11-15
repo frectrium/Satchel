@@ -1291,6 +1291,8 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-platform-verifier",
+ "serde",
+ "serde_json",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -1447,8 +1449,13 @@ name = "satchel-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "reqwest",
  "satchel-common",
+ "serde",
+ "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1475,6 +1482,7 @@ dependencies = [
  "hex",
  "reed-solomon-erasure",
  "serde",
+ "serde_json",
  "sha2",
  "tokio",
  "tracing",
