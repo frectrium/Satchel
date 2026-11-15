@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Satchel pricing calculator</title>
+  <meta name="description" content="When does owning storage beat renting it? The Satchel cost engine, running in your browser.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Satchel pricing calculator</h1>
+    <p class="lede">When does owning storage beat renting it? This page runs the same cost engine as
+      <code>satchel-cost</code>, compiled to WebAssembly, so its numbers match the report. Every default
+      price carries its Source Log ID.</p>
+    <nav class="presets" aria-label="Presets">
+      <span>Presets:</span>
+      <button type="button" data-preset="dropbox">Dropbox 2016 base case</button>
+      <button type="button" data-preset="0.1">0.1 PB</button>
+      <button type="button" data-preset="1">1 PB</button>
+      <button type="button" data-preset="10">10 PB</button>
+      <button type="button" data-preset="100">100 PB</button>
+      <button type="button" data-preset="500">500 PB</button>
+      <button type="button" data-preset="lab">Satchel lab cluster</button>
+    </nav>
+  </header>
+
+  <main>
+    <form id="inputs" autocomplete="off">
+      <fieldset>
+        <legend>Workload</legend>
+        <label>Starting data
+          <span class="pair">
+            <input type="number" id="start" min="0.001" step="any" required>
+            <select id="start_unit" aria-label="Unit of starting data">
+              <option value="1000000000">GB</option>
+              <option value="1000000000000">TB</option>
+              <option value="1000000000000000" selected>PB</option>
+            </select>
+          </span>
+        </label>
+        <label>Growth per year, %
+          <input type="range" id="growth" min="0" max="100" step="1">
+          <output for="growth" id="growth_out"></output>
+        </label>
+        <label>Horizon, years <input type="number" id="years" min="1" max="15" step="1" required></label>
+        <label>Average block, MB <input type="number" id="block" min="0.01" max="4.194304" step="any" required></label>
+        <label>Egress, multiple of ingest <input type="number" id="egress" min="0" step="any" required></label>
+        <label>Reads on data older than a year, %
+          <input type="range" id="cold_read" min="0" max="100" step="1">
+          <output for="cold_read" id="cold_read_out"></output>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Redundancy (on-prem)</legend>
+        <label>Layout
+          <select id="scheme">
+            <option value="magic_pocket">Magic Pocket: 2 regions, RS(6,3), 3.0x</option>
+            <option value="magic_pocket_cold">Magic Pocket cold tier: 2 + 1, 2.25x</option>
+            <option value="satchel">Satchel: 1 region, 3 zones, RS(6,3)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <div id="custom" hidden>
+          <label>Replicas while open <input type="number" id="replicas" min="1" max="8" step="1"></label>
+          <label>Data fragments, k <input type="number" id="k" min="1" max="32" step="1"></label>
+          <label>Parity fragments, m <input type="number" id="m" min="0" max="16" step="1"></label>
+          <label>Regions with a copy <input type="number" id="regions" min="1" max="4" step="1"></label>
+        </div>
+        <label>Cloud regions with a full copy
+          <select id="cloud_regions"><option value="1">1</option><option value="2">2</option></select>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>On-prem costs</legend>
+        <label>Server, USD per raw TB <input type="number" id="server" min="1" step="any" required></label>
+        <label>Hardware life, years <input type="number" id="life" min="1" max="10" step="1" required></label>
+        <label>Cost of capital, % <input type="number" id="wacc" min="0" max="30" step="any" required></label>
+        <label>Engineers <input type="number" id="engineers" min="0" step="any" required></label>
+        <label>Technicians on site, per site <input type="number" id="technicians" min="0" step="any" required></label>
+      </fieldset>
+      <p class="actions">
+        <button type="button" id="reset">Reset to base case</button>
+        <button type="button" id="share">Copy link to this scenario</button>
+        <span id="share_status" role="status"></span>
+      </p>
+    </form>
+
+    <section id="results" aria-live="polite">
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <h2>Total over the horizon</h2>
+      <div id="totals" class="cards"></div>
+      <p id="break_even" class="headline"></p>
+
+      <h2>Cumulative cost</h2>
+      <figure>
+        <svg id="chart" role="img" aria-label="Cumulative cost by provider and year"></svg>
+        <figcaption id="legend" class="legend" aria-label="Click a provider to show or hide its line"></figcaption>
+      </figure>
+
+      <h2>What the workload needs <span class="muted" id="at_year"></span></h2>
+      <div class="counts" id="counts"></div>
+
+      <h2>Where the data sits</h2>
+      <div class="layouts">
+        <div><h3>Cloud</h3><div id="cloud_layout" class="diagram"></div></div>
+        <div><h3>On-prem</h3><div id="onprem_layout" class="diagram"></div></div>
+      </div>
+
+      <h2>Sensitivity</h2>
+      <p class="muted">Which inputs move the break-even point the most. Each row changes one input from the scenario above.</p>
+      <button type="button" id="run_sensitivity">Work out sensitivity</button>
+      <div id="sensitivity"></div>
+
+      <details>
+        <summary>Default prices and their sources</summary>
+        <div id="prices"></div>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <p>Satchel case study. Sources are listed in <code>docs/sources/README.md</code> by ID. Cost method:
+      <code>docs/cost/method.md</code>. Nothing on this page leaves your browser.</p>
+  </footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

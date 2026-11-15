@@ -1,4 +1,5 @@
-//! Satchel frontend (#68): `PUT`, `GET` and `DELETE /blocks/{hash}`.
+//! Satchel frontend (#68): `PUT`, `GET` and `DELETE /blocks/{hash}`, plus
+//! the pricing calculator page at `/calculator/` (#54).
 //!
 //! A put is checked, deduplicated through the Block Index, appended to the
 //! 3 replicas of an open volume and then recorded in the index. A get reads
@@ -7,6 +8,7 @@
 //! Magic Pocket counterpart: Frontends [B2]. Decision Log: DDL-001,
 //! DDL-002, DDL-006, DDL-013.
 
+pub mod calculator;
 pub mod clients;
 
 use std::collections::{HashMap, HashSet};
@@ -98,6 +100,7 @@ pub fn router(config: Config) -> Router {
         // One byte over the limit, so an oversized body reaches the 413 check.
         .layer(DefaultBodyLimit::max(MAX_BLOCK + 1))
         .with_state(state)
+        .merge(calculator::router())
 }
 
 fn error(status: StatusCode, message: impl Into<String>) -> Response {

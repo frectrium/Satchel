@@ -176,6 +176,22 @@ CI runs the same script on every PR, in the **Integration tests (Compose)** job.
 cargo run --release -p satchel-bench -- --block-size 2MiB --clients 16 --out docs/results/e1/run.json
 ```
 
+### Run the cost calculator
+
+`satchel-cost` prices the case workload (#15) on AWS, Azure, on-prem and Satchel on EC2, and finds the data volume at which owning breaks even. Every default price is in the TOML files in `crates/satchel-cost/prices/`, tagged with its Source Log ID, and the method is in [`docs/cost/method.md`](docs/cost/method.md). Inputs that are proposed, assumed or not yet sourced are listed in `flagged-inputs.csv` and on every run.
+
+```bash
+cargo run -p satchel-cost                                  # base case summary
+cargo run -p satchel-cost -- --list                        # sensitivity cases
+cargo run -p satchel-cost -- --prices crates/satchel-cost/prices --out docs/cost/output
+```
+
+The same engine runs in the browser as the pricing calculator page (#54): change the workload, redundancy or on-prem costs and the totals, layouts and break-even point update live. The frontend serves it at [localhost:8080/calculator](http://localhost:8080/calculator) once the cluster is up, and it's published to GitHub Pages from `main`. The page loads `crates/satchel-calc` compiled to WASM from `web/calculator/pkg`, so after changing the cost engine, rebuild that bundle and commit it:
+
+```bash
+scripts/build-calculator.sh    # needs the wasm32 target and wasm-bindgen-cli 0.2.130
+```
+
 ## Repository layout
 
 ```
@@ -188,13 +204,15 @@ Satchel/
 │   ├── satchel-verifier/   # Background verifier (Pocket Watch) and the Master
 │   ├── satchel-files/      # Files as block lists, the API the local install serves
 │   ├── satchel-cost/       # Sizing and cost model behind the calculator
+│   ├── satchel-calc/       # The cost model as a JSON API, compiled to WASM
 │   ├── satchel-it/         # Integration tests against a running cluster
 │   └── satchel-bench/      # Load generator for the experiments
 ├── docs/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
 ├── observability/          # Prometheus config, Grafana provisioning and dashboards
-├── scripts/                # install.sh, satchel launcher, integration-test.sh, package-release.sh
+├── web/calculator/         # Pricing calculator page and its WASM bundle
+├── scripts/                # install.sh, satchel launcher, integration-test.sh, package-release.sh, build-calculator.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS
 ├── Dockerfile              # One image, all binaries
 └── docker-compose.yml      # Local 3-zone dev cluster

@@ -1,0 +1,121 @@
+scenario,provider,name,total_usd
+base,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+base,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+base,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+base,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+base,on_prem,"On-prem, Magic Pocket layout, US",166707704.23
+base,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+growth_minus_50,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",572705971.16
+growth_minus_50,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",573009874.78
+growth_minus_50,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",288940187.38
+growth_minus_50,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",289244091.01
+growth_minus_50,on_prem,"On-prem, Magic Pocket layout, US",130407674.43
+growth_minus_50,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",5222382742.38
+growth_plus_50,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",1139287077.83
+growth_plus_50,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",1140614334.38
+growth_plus_50,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",757404094.11
+growth_plus_50,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",758731350.67
+growth_plus_50,on_prem,"On-prem, Magic Pocket layout, US",213099971.25
+growth_plus_50,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",9331056238.97
+growth_high,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",1597286051.61
+growth_high,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",1599518737.96
+growth_high,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",1147235389.67
+growth_high,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",1149468076.02
+growth_high,on_prem,"On-prem, Magic Pocket layout, US",278282671.73
+growth_high,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",12591132683.90
+egress_minus_50,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",762714874.38
+egress_minus_50,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",763432657.14
+egress_minus_50,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",432098863.61
+egress_minus_50,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",432816646.37
+egress_minus_50,on_prem,"On-prem, Magic Pocket layout, US",166526478.05
+egress_minus_50,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",6957503715.25
+egress_plus_50,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",875331775.13
+egress_plus_50,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",876076347.65
+egress_plus_50,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",548157720.39
+egress_plus_50,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",548902292.91
+egress_plus_50,on_prem,"On-prem, Magic Pocket layout, US",166888930.41
+egress_plus_50,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7086873609.92
+egress_5x,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",987948675.88
+egress_5x,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",988720038.16
+egress_5x,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",664216577.17
+egress_5x,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",664987939.45
+egress_5x,on_prem,"On-prem, Magic Pocket layout, US",167251382.77
+egress_5x,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7216243504.58
+block_1mb,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",824326705.02
+block_1mb,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",825782322.42
+block_1mb,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",499202082.93
+block_1mb,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",500657700.33
+block_1mb,on_prem,"On-prem, Magic Pocket layout, US",166707704.23
+block_1mb,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+block_4mb,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",816371634.62
+block_4mb,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",816740592.38
+block_4mb,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",485591396.53
+block_4mb,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",485960354.29
+block_4mb,on_prem,"On-prem, Magic Pocket layout, US",166707704.23
+block_4mb,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+two_regions,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA, 2 regions",1584990385.24
+two_regions,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS, 2 regions",1582260894.84
+two_regions,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval, 2 regions",923758363.71
+two_regions,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS, 2 regions",921028873.30
+two_regions,on_prem,"On-prem, Magic Pocket layout, US",166707704.23
+two_regions,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+server_low,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+server_low,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+server_low,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+server_low,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+server_low,on_prem,"On-prem, Magic Pocket layout, US",156275027.31
+server_low,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+server_double,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+server_double,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+server_double,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+server_double,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+server_double,on_prem,"On-prem, Magic Pocket layout, US",288422268.31
+server_double,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+life_4,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+life_4,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+life_4,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+life_4,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+life_4,on_prem,"On-prem, Magic Pocket layout, US",191232996.14
+life_4,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+life_6,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+life_6,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+life_6,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+life_6,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+life_6,on_prem,"On-prem, Magic Pocket layout, US",150465413.12
+life_6,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+capital_low,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+capital_low,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+capital_low,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+capital_low,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+capital_low,on_prem,"On-prem, Magic Pocket layout, US",154128825.69
+capital_low,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+capital_high,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+capital_high,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+capital_high,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+capital_high,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+capital_high,on_prem,"On-prem, Magic Pocket layout, US",170934829.04
+capital_high,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+staff_low,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+staff_low,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+staff_low,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+staff_low,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+staff_low,on_prem,"On-prem, Magic Pocket layout, US",159772278.41
+staff_low,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+power_idle,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+power_idle,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+power_idle,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+power_idle,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+power_idle,on_prem,"On-prem, Magic Pocket layout, US",157737163.68
+power_idle,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+power_rack_budget,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+power_rack_budget,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+power_rack_budget,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+power_rack_budget,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+power_rack_budget,on_prem,"On-prem, Magic Pocket layout, US",170775491.12
+power_rack_budget,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58
+cold_tier_on_prem,aws,"AWS S3, Asia Pacific (Mumbai), cold on S3 Standard-IA",819023324.75
+cold_tier_on_prem,azure,"Azure Blob Storage, Central India, ZRS, cold on Azure Cool ZRS",819754502.39
+cold_tier_on_prem,aws_glacier_ir,"AWS S3, Asia Pacific (Mumbai), cold on S3 Glacier Instant Retrieval",490128292.00
+cold_tier_on_prem,azure_cold,"Azure Blob Storage, Central India, ZRS, cold on Azure Cold ZRS",490859469.64
+cold_tier_on_prem,on_prem,"On-prem, Magic Pocket layout, US",130357805.64
+cold_tier_on_prem,satchel_ec2,"Satchel on EC2, Asia Pacific (Mumbai)",7022188662.58

@@ -119,7 +119,7 @@ impl S3Store {
                 None => break,
             }
         }
-        files.sort_by(|a, b| b.id.cmp(&a.id));
+        files.sort_by_key(|f| std::cmp::Reverse(f.id));
         Ok(files)
     }
 

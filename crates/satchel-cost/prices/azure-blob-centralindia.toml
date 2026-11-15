@@ -1,0 +1,101 @@
+# Azure Blob Storage (General Purpose v2, block blobs) and bandwidth, Central India.
+# Values are from the Azure Retail Prices API on 2026-10-20 [P5][P6]; tier rules from [P8].
+# The API lists units as "1 GB". We treat them like AWS's binary GB (our inference).
+
+[meta]
+provider = "azure"
+service = "blob"
+region = "centralindia"
+currency = "USD"
+accessed = "2026-10-20"
+source = "P5"
+
+# Storage, USD per GB-month. Hot has volume bands starting at 0, 51,200 and 512,000 GB [P5].
+[storage.hot]
+source = "P5"
+lrs = [ { up_to_gb = 51200, usd_per_gb_month = 0.02 }, { up_to_gb = 512000, usd_per_gb_month = 0.0192 }, { usd_per_gb_month = 0.0184 } ]
+zrs = [ { up_to_gb = 51200, usd_per_gb_month = 0.025 }, { up_to_gb = 512000, usd_per_gb_month = 0.024 }, { usd_per_gb_month = 0.023 } ]
+grs = [ { up_to_gb = 51200, usd_per_gb_month = 0.04 }, { up_to_gb = 512000, usd_per_gb_month = 0.0384 }, { usd_per_gb_month = 0.0368 } ]
+
+[storage.cool]
+source = "P5"
+lrs = 0.011
+zrs = 0.0138
+grs = 0.026
+min_days = 30          # [P8]
+
+[storage.cold]
+source = "P5"
+lrs = 0.0045
+zrs = 0.005
+grs = 0.00994
+min_days = 90          # [P8]
+
+[storage.archive]
+source = "P5"
+lrs = 0.002
+grs = 0.005
+# Archive is not offered on ZRS [P8].
+min_days = 180         # [P8]
+rehydration_hours_max = 15   # [P8]
+
+# Operations, USD per 10,000 [P5]. Data write is free on every tier listed.
+[operations]
+source = "P5"
+hot_lrs = { write = 0.055, read = 0.0044, list_create = 0.055, other = 0.0044 }
+hot_zrs = { write = 0.06875, read = 0.0044, list_create = 0.06875, other = 0.0044 }
+hot_grs = { write = 0.11, read = 0.0044, list_create = 0.11, other = 0.0044 }
+cool_lrs = { write = 0.1, read = 0.01 }
+cool_zrs = { write = 0.1, read = 0.01 }
+cool_grs = { write = 0.2, read = 0.01 }
+cold_lrs = { write = 0.18, read = 0.1 }
+cold_zrs = { write = 0.2, read = 0.1 }
+cold_grs = { write = 0.452, read = 0.1 }
+archive_lrs = { write = 0.12, read = 6.00, priority_read = 70.00 }
+archive_grs = { write = 0.27, read = 6.00, priority_read = 70.00 }
+
+# Retrieval and early deletion, USD per GB [P5].
+[retrieval]
+source = "P5"
+cool = 0.01
+cold = 0.03
+archive_standard = 0.024
+archive_priority = 0.14
+
+[early_delete]
+source = "P5"
+cool_lrs = 0.0152
+cool_zrs = 0.019
+cold_lrs = 0.0045
+cold_zrs = 0.005
+archive_lrs = 0.002
+
+# Bandwidth, USD per GB [P6]. `from_gb` is the API's tierMinimumUnits threshold per month.
+[transfer.internet_out]
+source = "P6"
+# Microsoft network routing, the default.
+microsoft_network = [
+  { from_gb = 0, usd_per_gb = 0.0 },
+  { from_gb = 100, usd_per_gb = 0.12 },
+  { from_gb = 10335, usd_per_gb = 0.085 },
+  { from_gb = 51295, usd_per_gb = 0.082 },
+  { from_gb = 153695, usd_per_gb = 0.08 },
+]
+internet_routing = [
+  { from_gb = 0, usd_per_gb = 0.0 },
+  { from_gb = 100, usd_per_gb = 0.11 },
+  { from_gb = 10100, usd_per_gb = 0.075 },
+  { from_gb = 50100, usd_per_gb = 0.07 },
+  { from_gb = 150100, usd_per_gb = 0.06 },
+]
+
+[transfer.other]
+source = "P6"
+internet_in_usd_per_gb = 0.0
+inter_az_usd_per_gb_each_way = 0.01
+inter_region_usd_per_gb = 0.08
+
+[redundancy]
+source = "P9"
+lrs = { datacenters = 1, durability_nines = 11 }
+zrs = { azs = 3, durability_nines = 12 }
