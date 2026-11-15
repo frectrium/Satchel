@@ -9,6 +9,7 @@ members = [
     "crates/satchel-it",
     "crates/satchel-bench",
     "crates/satchel-cost",
+    "crates/satchel-calc",
     "crates/satchel-files",
 ]
 
@@ -42,6 +43,8 @@ tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 ureq = { version = "3.4", default-features = false, features = ["json"] }
+# Must match the wasm-bindgen CLI that builds web/calculator/pkg.
+wasm-bindgen = "=0.2.130"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

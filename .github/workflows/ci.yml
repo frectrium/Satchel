@@ -76,6 +76,24 @@ jobs:
         env:
           SATCHEL_IT_SKIP_BUILD: "1"
 
+  calculator:
+    name: Calculator (WASM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Smoke test the committed bundle
+        run: node web/calculator/smoke.mjs
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: wasm32-unknown-unknown
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.130
+      - name: Rebuild the bundle and smoke test it
+        run: scripts/build-calculator.sh
+
   terraform:
     name: Terraform (fmt, validate)
     runs-on: ubuntu-latest
