@@ -139,28 +139,34 @@ impl Master {
         let mut closed = volume.clone();
         closed.state = VolumeState::Closed;
         closed.generation += 1;
-        self.update_volume(&closed).await?;
+        // Encode the size the index committed, not the one listed before:
+        // blocks indexed in between grow it, and once the volume is closed
+        // the index refuses new blocks for it (DDL-019), so this size is final.
+        let committed = self.update_volume(&closed).await?;
 
-        if self.config.encode && volume.size > 0 {
-            let fragments = self.encode(&closed, healthy).await?;
-            let mut coded = closed.clone();
+        if self.config.encode && committed.size > 0 {
+            let fragments = self.encode(&committed, healthy).await?;
+            let mut coded = committed.clone();
             coded.kind = VolumeKind::Rs63;
             coded.nodes = fragments;
             coded.generation += 1;
             self.update_volume(&coded).await?;
-            self.delete_replicas(&closed, healthy).await?;
+            self.delete_replicas(&committed, healthy).await?;
         }
         Ok(())
     }
 
-    async fn update_volume(&self, volume: &Volume) -> anyhow::Result<()> {
+    /// Commits a new generation and returns the row as the index stored it.
+    async fn update_volume(&self, volume: &Volume) -> anyhow::Result<Volume> {
         self.http
             .put(format!("{}/volumes/{}", self.config.index_url, volume.id))
             .json(volume)
             .send()
             .await?
-            .error_for_status()?;
-        Ok(())
+            .error_for_status()?
+            .json()
+            .await
+            .map_err(Into::into)
     }
 
     async fn delete_replicas(&self, volume: &Volume, healthy: &[NodeAddr]) -> anyhow::Result<()> {
@@ -290,8 +296,21 @@ mod tests {
         StatusCode::OK
     }
 
-    async fn read_replica() -> &'static [u8] {
-        b"abc"
+    #[derive(serde::Deserialize)]
+    struct Range {
+        length: usize,
+    }
+
+    async fn read_replica(
+        State(state): State<Arc<CloseState>>,
+        axum::extract::Query(range): axum::extract::Query<Range>,
+    ) -> Vec<u8> {
+        state
+            .events
+            .lock()
+            .unwrap()
+            .push(format!("read:{}", range.length));
+        vec![7; range.length]
     }
 
     async fn write_fragment(State(state): State<Arc<CloseState>>) -> StatusCode {
@@ -304,10 +323,12 @@ mod tests {
         StatusCode::NO_CONTENT
     }
 
+    /// Answers like the index: with the stored row. A block indexed after
+    /// the Master listed the volume makes the closed row 5 bytes bigger.
     async fn update_volume(
         State(state): State<Arc<CloseState>>,
-        Json(volume): Json<Volume>,
-    ) -> StatusCode {
+        Json(mut volume): Json<Volume>,
+    ) -> Json<Volume> {
         state.events.lock().unwrap().push(format!(
             "volume:{}:{}",
             volume.generation,
@@ -316,8 +337,11 @@ mod tests {
                 VolumeKind::Rs63 => "rs63",
             }
         ));
-        state.updates.lock().unwrap().push(volume);
-        StatusCode::OK
+        if volume.state == VolumeState::Closed && volume.kind == VolumeKind::Replicated {
+            volume.size += 5;
+        }
+        state.updates.lock().unwrap().push(volume.clone());
+        Json(volume)
     }
 
     async fn close_server() -> (String, Arc<CloseState>) {
@@ -450,6 +474,9 @@ mod tests {
             .position(|event| event == "volume:3:rs63")
             .unwrap();
         let first_delete = events.iter().position(|event| event == "delete").unwrap();
+        // The encode read the committed 8 bytes, not the 3 the listing had.
+        assert!(events.iter().any(|event| event == "read:8"), "{events:?}");
+        assert_eq!(updates[1].size, 8);
         assert!(close < first_fragment);
         assert!(first_fragment < coded);
         assert!(coded < first_delete);

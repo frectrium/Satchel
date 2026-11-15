@@ -133,13 +133,22 @@ impl NodeStore {
             .append(true)
             .open(&path)
             .with_context(|| format!("open replica extent {}", path.display()))?;
-        let data_offset = file.seek(SeekFrom::End(0))? + RECORD_HEADER_LEN;
+        let start = file.seek(SeekFrom::End(0))?;
+        let data_offset = start + RECORD_HEADER_LEN;
 
-        file.write_all(&RECORD_MAGIC)?;
-        file.write_all(&expected_hash)?;
-        file.write_all(&(bytes.len() as u64).to_le_bytes())?;
-        file.write_all(bytes)?;
-        file.sync_data().context("fsync appended block")?;
+        let written = (|| -> std::io::Result<()> {
+            file.write_all(&RECORD_MAGIC)?;
+            file.write_all(&expected_hash)?;
+            file.write_all(&(bytes.len() as u64).to_le_bytes())?;
+            file.write_all(bytes)?;
+            file.sync_data()
+        })();
+        if let Err(error) = written {
+            // Cut the partial record off, so the next append starts on a
+            // record boundary and the next restart still parses the extent.
+            let _ = file.set_len(start).and_then(|()| file.sync_data());
+            return Err(error).context("append block");
+        }
 
         self.inner
             .replicas
@@ -158,15 +167,18 @@ impl NodeStore {
     }
 
     fn read_replica(&self, volume: u64, offset: u64, length: u64) -> anyhow::Result<Vec<u8>> {
-        let entries = self
-            .inner
-            .replicas
-            .lock()
-            .expect("replica index lock poisoned");
-        let entries = entries
-            .get(&volume)
-            .cloned()
-            .context("unknown replica volume")?;
+        // Copy this volume's records and let go of the node-wide lock before
+        // any file I/O, so reads and appends don't queue behind each other.
+        let entries = {
+            let map = self
+                .inner
+                .replicas
+                .lock()
+                .expect("replica index lock poisoned");
+            map.get(&volume)
+                .cloned()
+                .context("unknown replica volume")?
+        };
         let end = offset.checked_add(length).context("range overflow")?;
         let extent_len = entries
             .last()
@@ -368,6 +380,18 @@ pub fn router(config: &ServiceConfig, store: NodeStore) -> Router {
         .merge(service::health_router(config))
 }
 
+/// Runs a store call on Tokio's blocking pool. File I/O and fsync would
+/// otherwise stall every other request on the same async worker.
+async fn blocking<T: Send + 'static>(
+    store: &NodeStore,
+    f: impl FnOnce(&NodeStore) -> anyhow::Result<T> + Send + 'static,
+) -> anyhow::Result<T> {
+    let store = store.clone();
+    tokio::task::spawn_blocking(move || f(&store))
+        .await
+        .map_err(|e| anyhow::anyhow!("storage task failed: {e}"))?
+}
+
 async fn append_block(
     State(store): State<NodeStore>,
     AxumPath(volume): AxumPath<u64>,
@@ -378,15 +402,11 @@ async fn append_block(
         Ok(value) => value,
         Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
-    match store.append_block(volume, hash, &body) {
-        Ok(offset) => (
-            StatusCode::CREATED,
-            Json(AppendResponse {
-                offset,
-                length: body.len() as u64,
-            }),
-        )
-            .into_response(),
+    let length = body.len() as u64;
+    match blocking(&store, move |s| s.append_block(volume, hash, &body)).await {
+        Ok(offset) => {
+            (StatusCode::CREATED, Json(AppendResponse { offset, length })).into_response()
+        }
         Err(error) if error.to_string().contains("checksum") => {
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()
         }
@@ -399,7 +419,8 @@ async fn read_replica(
     AxumPath(volume): AxumPath<u64>,
     Query(range): Query<RangeQuery>,
 ) -> Response {
-    match store.read_replica(volume, range.offset, range.length) {
+    let (offset, length) = (range.offset, range.length);
+    match blocking(&store, move |s| s.read_replica(volume, offset, length)).await {
         Ok(bytes) => ([(header::CONTENT_TYPE, "application/octet-stream")], bytes).into_response(),
         Err(error) if error.to_string().contains("unknown replica") => {
             StatusCode::NOT_FOUND.into_response()
@@ -421,7 +442,11 @@ async fn write_fragment(
         Ok(value) => value,
         Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
-    match store.write_fragment(volume, fragment, checksum, &body) {
+    match blocking(&store, move |s| {
+        s.write_fragment(volume, fragment, checksum, &body)
+    })
+    .await
+    {
         Ok(()) => StatusCode::CREATED.into_response(),
         Err(error) if error.to_string().contains("checksum") => {
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()
@@ -440,7 +465,7 @@ async fn read_fragment(
         (Some(offset), Some(length)) => Some(RangeQuery { offset, length }),
         _ => return StatusCode::BAD_REQUEST.into_response(),
     };
-    match store.read_fragment(volume, fragment, range) {
+    match blocking(&store, move |s| s.read_fragment(volume, fragment, range)).await {
         Ok(bytes) => ([(header::CONTENT_TYPE, "application/octet-stream")], bytes).into_response(),
         Err(error) if error.to_string().contains("unknown fragment") => {
             StatusCode::NOT_FOUND.into_response()
@@ -456,7 +481,7 @@ async fn delete_replica(
     State(store): State<NodeStore>,
     AxumPath(volume): AxumPath<u64>,
 ) -> Response {
-    match store.delete_replica(volume) {
+    match blocking(&store, move |s| s.delete_replica(volume)).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => internal_error(error),
@@ -467,7 +492,7 @@ async fn delete_fragment(
     State(store): State<NodeStore>,
     AxumPath((volume, fragment)): AxumPath<(u64, u8)>,
 ) -> Response {
-    match store.delete_fragment(volume, fragment) {
+    match blocking(&store, move |s| s.delete_fragment(volume, fragment)).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => internal_error(error),
@@ -475,7 +500,7 @@ async fn delete_fragment(
 }
 
 async fn list_extents(State(store): State<NodeStore>) -> Response {
-    match store.list_extents() {
+    match blocking(&store, |s| s.list_extents()).await {
         Ok(extents) => Json(extents).into_response(),
         Err(error) => internal_error(error),
     }
@@ -520,37 +545,36 @@ fn scan_replicas(dir: &Path) -> anyhow::Result<BTreeMap<u64, Vec<BlockRecord>>> 
         else {
             continue;
         };
-        let mut file = File::open(entry.path())?;
+        let path = entry.path();
+        let mut file = File::open(&path)?;
+        let len = file.metadata()?.len();
         let mut logical_offset = 0;
         let mut physical_offset = 0;
         let mut records = Vec::new();
-        loop {
+        // A record is acknowledged only after its fsync, so a record cut
+        // short at the end was never acknowledged and is safe to drop.
+        let mut torn = None;
+        while physical_offset < len {
+            if physical_offset + RECORD_HEADER_LEN > len {
+                torn = Some("a partial record header");
+                break;
+            }
             let mut magic = [0; 4];
-            match file.read_exact(&mut magic) {
-                Ok(()) => {}
-                Err(error)
-                    if error.kind() == std::io::ErrorKind::UnexpectedEof
-                        && physical_offset == file.metadata()?.len() =>
-                {
-                    break
-                }
-                Err(error) => return Err(error).context("read replica record magic"),
-            }
-            if magic != RECORD_MAGIC {
-                bail!("invalid replica record magic in volume {volume}");
-            }
             let mut hash = [0; 32];
             let mut length = [0; 8];
+            file.read_exact(&mut magic)?;
             file.read_exact(&mut hash)?;
             file.read_exact(&mut length)?;
+            if magic != RECORD_MAGIC {
+                torn = Some("bytes that are not a record");
+                break;
+            }
             let length = u64::from_le_bytes(length);
             let data_offset = physical_offset + RECORD_HEADER_LEN;
-            let next_offset = data_offset
-                .checked_add(length)
-                .context("replica length overflow")?;
-            if next_offset > file.metadata()?.len() {
-                bail!("truncated replica record in volume {volume}");
-            }
+            let Some(next_offset) = data_offset.checked_add(length).filter(|n| *n <= len) else {
+                torn = Some("a record cut short");
+                break;
+            };
             file.seek(SeekFrom::Start(next_offset))?;
             records.push(BlockRecord {
                 offset: logical_offset,
@@ -560,6 +584,16 @@ fn scan_replicas(dir: &Path) -> anyhow::Result<BTreeMap<u64, Vec<BlockRecord>>> 
             });
             logical_offset += length;
             physical_offset = next_offset;
+        }
+        if let Some(what) = torn {
+            tracing::warn!(
+                volume,
+                dropped_bytes = len - physical_offset,
+                "replica extent ends in {what}; cutting it back to the last whole record"
+            );
+            let file = OpenOptions::new().write(true).open(&path)?;
+            file.set_len(physical_offset)?;
+            file.sync_all()?;
         }
         replicas.insert(volume, records);
     }
@@ -738,6 +772,73 @@ mod tests {
             reopened.read_replica(3, 0, bytes.len() as u64).unwrap(),
             bytes
         );
+    }
+
+    #[test]
+    fn a_torn_last_record_is_cut_off_on_restart() {
+        let dir = TestDir::new();
+        let (first, second) = (b"first block".as_slice(), b"second block".as_slice());
+        let store = NodeStore::open(&dir.0).unwrap();
+        store.append_block(4, sha256(first), first).unwrap();
+        store.append_block(4, sha256(second), second).unwrap();
+        drop(store);
+        let path = replica_path(&dir.0, 4);
+        let whole = fs::metadata(&path).unwrap().len();
+        let one_record = RECORD_HEADER_LEN + first.len() as u64;
+
+        for torn_len in [whole - 3, one_record + 10, one_record + 1] {
+            // A crash in the middle of the second append.
+            OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_len(torn_len)
+                .unwrap();
+            let reopened = NodeStore::open(&dir.0).unwrap();
+            assert_eq!(
+                reopened.read_replica(4, 0, first.len() as u64).unwrap(),
+                first
+            );
+            assert!(reopened
+                .read_replica(4, 0, (first.len() + 1) as u64)
+                .is_err());
+            assert_eq!(
+                fs::metadata(&path).unwrap().len(),
+                one_record,
+                "cut at {torn_len}"
+            );
+            // Appends continue on a record boundary and survive another restart.
+            reopened.append_block(4, sha256(second), second).unwrap();
+            drop(reopened);
+            let again = NodeStore::open(&dir.0).unwrap();
+            assert_eq!(
+                again
+                    .read_replica(4, first.len() as u64, second.len() as u64)
+                    .unwrap(),
+                second
+            );
+        }
+    }
+
+    #[test]
+    fn garbage_after_the_last_record_is_cut_off_on_restart() {
+        let dir = TestDir::new();
+        let block = b"kept".as_slice();
+        NodeStore::open(&dir.0)
+            .unwrap()
+            .append_block(5, sha256(block), block)
+            .unwrap();
+        let path = replica_path(&dir.0, 5);
+        let good = fs::metadata(&path).unwrap().len();
+        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(&[0xAB; 100]).unwrap();
+        drop(file);
+        let reopened = NodeStore::open(&dir.0).unwrap();
+        assert_eq!(
+            reopened.read_replica(5, 0, block.len() as u64).unwrap(),
+            block
+        );
+        assert_eq!(fs::metadata(&path).unwrap().len(), good);
     }
 
     #[test]
