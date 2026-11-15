@@ -1,0 +1,49 @@
+#!/bin/bash
+# Boots the files API in S3 mode. The binary comes from the deploy/ prefix of
+# the files bucket (scripts/deploy-web.sh puts it there), and the admin
+# password hashes from the SecureString parameter /satchel/admins.
+set -euxo pipefail
+
+useradd --system --home-dir /var/lib/satchel --create-home satchel || true
+install -d -o satchel /etc/satchel
+
+cat > /usr/local/bin/satchel-files-start <<'EOF'
+#!/bin/bash
+set -euo pipefail
+until aws s3 cp --quiet "s3://${files_bucket}/deploy/satchel-files" /usr/local/bin/satchel-files.new; do sleep 5; done
+mv /usr/local/bin/satchel-files.new /usr/local/bin/satchel-files
+chmod 755 /usr/local/bin/satchel-files
+admins=$(aws ssm get-parameter --region ap-south-1 --name /satchel/admins --with-decryption --query Parameter.Value --output text)
+umask 077
+printf 'SATCHEL_ADMINS=%s\n' "$admins" > /etc/satchel/admins.env
+chown satchel /etc/satchel/admins.env
+EOF
+chmod 755 /usr/local/bin/satchel-files-start
+
+cat > /etc/systemd/system/satchel-files.service <<'EOF'
+[Unit]
+Description=Satchel files API (S3 backend)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+PermissionsStartOnly=true
+ExecStartPre=/usr/local/bin/satchel-files-start
+EnvironmentFile=-/etc/satchel/admins.env
+Environment=RUST_LOG=info
+Environment=SATCHEL_PORT=47800
+Environment=SATCHEL_BACKEND=s3
+Environment=SATCHEL_S3_BUCKET=${files_bucket}
+Environment=SATCHEL_S3_REGION=ap-south-1
+Environment=SATCHEL_MAX_FILE_BYTES=${max_file_bytes}
+Environment=SATCHEL_MAX_TOTAL_BYTES=${max_total_bytes}
+ExecStart=/usr/local/bin/satchel-files
+User=satchel
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now satchel-files
