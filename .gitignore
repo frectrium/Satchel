@@ -65,3 +65,4 @@ Desktop.ini
 
 # --- Release packages (scripts/package-release.sh) ---
 /dist/
+/dist-deploy/

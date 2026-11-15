@@ -37,8 +37,8 @@ async fn main() -> anyhow::Result<()> {
         std::io::stdin().lock().read_line(&mut line)?;
         let password = line.trim_end_matches(['\r', '\n']);
         anyhow::ensure!(
-            password.len() >= 12,
-            "use a password of at least 12 characters"
+            password.len() >= 8,
+            "use a password of at least 8 characters"
         );
         println!("{}", auth::hash_password(password));
         return Ok(());

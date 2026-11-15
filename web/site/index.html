@@ -15,7 +15,7 @@
       <a href="#/" data-route="home">Home</a>
       <a href="#/store" data-route="store">Store files</a>
       <a href="#/files" data-route="files">My files</a>
-      <a href="calculator/">Calculator</a>
+      <a href="calculator/index.html">Calculator</a>
       <a href="#/docs" data-route="docs">How it works</a>
     </nav>
     <span id="session" class="session"></span>
@@ -192,7 +192,7 @@
       <p>Magic Pocket stores only blocks; Dropbox keeps file metadata in separate systems such as FileJournal [B2]. Satchel adds a small SQLite manifest so the demo can store whole files: each file's block list, plus a reference count per block, so deleting a file only releases blocks no other file uses. That layer is a deliberate deviation from Magic Pocket (DDL-020).</p>
 
       <h2 id="doc-cost">Rent or own</h2>
-      <p>Renting costs per GB-month and per request, from the first byte. Owning costs a lot up front and every month, whatever you store: servers, power, space and the engineers who run it. So the cloud wins small and owning wins big (our inference, which the cost model tests). The <a href="calculator/">calculator</a> runs the same cost engine as the report and finds the break-even size for any inputs. The live panel on the store page shows the marginal side: what your files add to each bill.</p>
+      <p>Renting costs per GB-month and per request, from the first byte. Owning costs a lot up front and every month, whatever you store: servers, power, space and the engineers who run it. So the cloud wins small and owning wins big (our inference, which the cost model tests). The <a href="calculator/index.html">calculator</a> runs the same cost engine as the report and finds the break-even size for any inputs. The live panel on the store page shows the marginal side: what your files add to each bill.</p>
       <p class="muted">The on-prem figure on the store page is hardware paid off over its life, drive power and colocation for the raw bytes only. Staff, switches and transit are fixed costs that show up only at scale, so they're in the calculator, not in the per-file figure (our inference).</p>
 
       <h2 id="doc-install">Run it yourself</h2>

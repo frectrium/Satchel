@@ -15,19 +15,17 @@ Uploads to S3 are limited to 100 MiB per file and 2 GiB in total, and only
 admins can upload, list or delete. Anyone can use the calculator and a local
 Satchel install.
 
-## Admin accounts
+## Admin login
 
-Each admin chooses their own password. Hash it locally (the password is read
-from stdin and never stored), then store the hashes as one SecureString:
+The site has one admin login for S3 uploads. Set its password yourself; the
+script asks for it without echoing, hashes it with Argon2id and stores only
+the hash in the SecureString parameter `/satchel/admins`:
 
 ```bash
-cargo run -q -p satchel-files -- hash-password    # type the password, press Enter
-aws ssm put-parameter --region ap-south-1 --name /satchel/admins --type SecureString \
-  --value 'alice:$argon2id$... bob:$argon2id$...' --overwrite
+scripts/set-admin.sh          # user name "admin"; pass another name as the argument
 ```
 
-Entries are `name:hash`, separated by spaces. The backend reads the parameter
-each time it starts, so restart it after a change.
+It restarts the backend so the new login works straight away.
 
 ## Bring it up
 
