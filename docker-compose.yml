@@ -32,8 +32,9 @@ services:
   index:
     <<: *satchel
     command: satchel-index
-    environment: { <<: *env, SATCHEL_PORT: "8081" }
+    environment: { <<: *env, SATCHEL_PORT: "8081", SATCHEL_DATA_DIR: /data }
     ports: ["8081:8081"]
+    volumes: ["index:/data"]
 
   node-z1:
     <<: *satchel
@@ -64,6 +65,7 @@ services:
     depends_on: [index]
 
 volumes:
+  index:
   node-z1:
   node-z2:
   node-z3:
