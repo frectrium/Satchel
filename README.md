@@ -144,6 +144,12 @@ cargo run -p satchel-cost -- --list                        # sensitivity cases
 cargo run -p satchel-cost -- --prices crates/satchel-cost/prices --out docs/cost/output
 ```
 
+The same engine runs in the browser as the pricing calculator page (#54): change the workload, redundancy or on-prem costs and the totals, layouts and break-even point update live. The frontend serves it at [localhost:8080/calculator](http://localhost:8080/calculator) once the cluster is up, and it's published to GitHub Pages from `main`. The page loads `crates/satchel-calc` compiled to WASM from `web/calculator/pkg`, so after changing the cost engine, rebuild that bundle and commit it:
+
+```bash
+scripts/build-calculator.sh    # needs the wasm32 target and wasm-bindgen-cli 0.2.130
+```
+
 ## Repository layout
 
 ```
@@ -155,12 +161,14 @@ Satchel/
 │   ├── satchel-node/       # Storage node (OSD)
 │   ├── satchel-verifier/   # Background verifier (Pocket Watch)
 │   ├── satchel-cost/       # Sizing and cost model behind the calculator
+│   ├── satchel-calc/       # The cost model as a JSON API, compiled to WASM
 │   ├── satchel-it/         # Integration tests against a running cluster
 │   └── satchel-bench/      # Load generator for the experiments
 ├── docs/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
-├── scripts/                # integration-test.sh
+├── web/calculator/         # Pricing calculator page and its WASM bundle
+├── scripts/                # integration-test.sh, build-calculator.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS
 ├── Dockerfile              # One image, all binaries
 └── docker-compose.yml      # Local 3-zone dev cluster

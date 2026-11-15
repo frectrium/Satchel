@@ -1520,6 +1520,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
 ]
 
@@ -1536,6 +1537,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "satchel-calc"
+version = "0.1.0"
+dependencies = [
+ "satchel-cost",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]
