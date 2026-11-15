@@ -157,6 +157,7 @@ Satchel/
 │   ├── satchel-index/      # Block Index
 │   ├── satchel-node/       # Storage node (OSD)
 │   ├── satchel-verifier/   # Background verifier (Pocket Watch)
+│   ├── satchel-cost/       # Sizing and cost model behind the calculator
 │   ├── satchel-it/         # Integration tests against a running cluster
 │   └── satchel-bench/      # Load generator for the experiments
 ├── docs/

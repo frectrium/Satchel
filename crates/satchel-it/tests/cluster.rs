@@ -205,3 +205,76 @@ fn ts_svc_3_all_services_export_metrics() {
         },
     );
 }
+
+/// Sends `body` as JSON and returns the status and JSON reply.
+fn send_json(agent: &ureq::Agent, method: &str, url: &str, body: &Value) -> (u16, Value) {
+    let request = match method {
+        "POST" => agent.post(url),
+        "PUT" => agent.put(url),
+        _ => panic!("unsupported method {method}"),
+    };
+    let mut response = request
+        .send_json(body)
+        .unwrap_or_else(|e| panic!("{method} {url}: {e}"));
+    let status = response.status().as_u16();
+    let reply = response.body_mut().read_json().unwrap_or(Value::Null);
+    (status, reply)
+}
+
+#[test]
+#[ignore = "needs the Compose cluster: run scripts/integration-test.sh"]
+fn ts_idx_4_entries_survive_an_index_restart() {
+    let cluster = cluster();
+    let index = cluster
+        .services
+        .iter()
+        .find(|s| s.name == "index")
+        .expect("docker-compose.yml has an index service");
+    let agent = agent();
+    wait_for_health(&agent, index, Instant::now() + cluster.ready_timeout).unwrap();
+
+    let (status, volume) = send_json(
+        &agent,
+        "POST",
+        &format!("{}/volumes", index.base_url),
+        &serde_json::json!({"nodes": ["ts-idx-4-a", "ts-idx-4-b", "ts-idx-4-c"]}),
+    );
+    assert_eq!(status, 201, "POST /volumes returned {status}: {volume}");
+    // SHA-256 of "TS-IDX-4". The index stores entries without the bytes, so
+    // any valid hash works, and a rerun on the same cluster reuses it.
+    let hash = "c5354852e3c28a6210eec24b103cd7453d5258dd33151e8e7fa75ba1b7caf420";
+    let entry = serde_json::json!({"volume": volume["id"], "offset": 0, "length": 8});
+    // 201 with this entry, or 200 with the one a previous run stored.
+    let (status, stored) = send_json(
+        &agent,
+        "PUT",
+        &format!("{}/blocks/{hash}", index.base_url),
+        &entry,
+    );
+    assert!(
+        status == 201 || status == 200,
+        "PUT /blocks returned {status}"
+    );
+
+    let compose = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docker-compose.yml");
+    let restarted = std::process::Command::new("docker")
+        .args(["compose", "-f"])
+        .arg(&compose)
+        .args(["restart", "index"])
+        .status()
+        .expect("docker compose restart runs");
+    assert!(restarted.success(), "docker compose restart index failed");
+    wait_for_health(&agent, index, Instant::now() + cluster.ready_timeout).unwrap();
+
+    let mut response = agent
+        .get(format!("{}/blocks/{hash}", index.base_url))
+        .call()
+        .unwrap();
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "TS-IDX-4: the entry is gone after a restart"
+    );
+    let got: Value = response.body_mut().read_json().unwrap();
+    assert_eq!(got, stored, "TS-IDX-4: the entry changed across a restart");
+}
