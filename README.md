@@ -211,6 +211,7 @@ Satchel/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
 ├── observability/          # Prometheus config, Grafana provisioning and dashboards
+├── web/app/                # The Satchel website (React, Vite, TypeScript)
 ├── web/calculator/         # Pricing calculator page and its WASM bundle
 ├── scripts/                # install.sh, satchel launcher, integration-test.sh, package-release.sh, build-calculator.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS

@@ -1,11 +1,11 @@
 :root {
   color-scheme: light dark;
-  --bg: #fbfbfa;
-  --fg: #1d1f21;
-  --muted: #5c6166;
-  --line: #d8dadc;
+  --bg: #f7f5f2;
+  --fg: #1e1919;
+  --muted: #6b6560;
+  --line: #e6e1da;
   --card: #ffffff;
-  --accent: #2458c6;
+  --accent: #e2553a;
   --error: #b3261e;
   --s1: #2458c6;
   --s2: #c2410c;
@@ -17,12 +17,12 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15171a;
-    --fg: #e8eaed;
-    --muted: #a0a6ad;
-    --line: #33373c;
-    --card: #1e2125;
-    --accent: #7aa2ff;
+    --bg: #151312;
+    --fg: #f3efea;
+    --muted: #a39c94;
+    --line: #36312d;
+    --card: #1f1c1a;
+    --accent: #ff7656;
     --error: #ff8a80;
     --s1: #7aa2ff;
     --s2: #fb923c;
@@ -53,6 +53,8 @@ code { font-size: 0.9em; }
 
 .presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .presets span { color: var(--muted); margin-right: 4px; }
+
+.back { display: inline-block; margin-bottom: 8px; color: var(--accent); font-weight: 650; text-decoration: none; }
 
 button {
   font: inherit;

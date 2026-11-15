@@ -94,6 +94,23 @@ jobs:
       - name: Rebuild the bundle and smoke test it
         run: scripts/build-calculator.sh
 
+  website:
+    name: Website (React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/app/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Type-check and build
+        run: npm run build
+
   terraform:
     name: Terraform (fmt, validate)
     runs-on: ubuntu-latest
