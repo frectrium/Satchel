@@ -18,15 +18,21 @@ pub struct ServiceConfig {
 }
 
 impl ServiceConfig {
-    /// Reads `SATCHEL_PORT` (falling back to `default_port`) and `SATCHEL_ZONE`.
+    /// Reads `SATCHEL_PORT` (falling back to `default_port`), `SATCHEL_ZONE`
+    /// and `SATCHEL_BIND`, the address to listen on (default `0.0.0.0`; the
+    /// local install uses `127.0.0.1` so nothing is reachable from the network).
     pub fn from_env(name: &'static str, default_port: u16) -> anyhow::Result<Self> {
         let port = match std::env::var("SATCHEL_PORT") {
             Ok(p) => p.parse().context("SATCHEL_PORT must be a port number")?,
             Err(_) => default_port,
         };
+        let ip: std::net::IpAddr = match std::env::var("SATCHEL_BIND") {
+            Ok(b) => b.parse().context("SATCHEL_BIND must be an IP address")?,
+            Err(_) => [0, 0, 0, 0].into(),
+        };
         Ok(Self {
             name,
-            addr: SocketAddr::from(([0, 0, 0, 0], port)),
+            addr: SocketAddr::new(ip, port),
             zone: std::env::var("SATCHEL_ZONE").ok(),
         })
     }

@@ -189,6 +189,7 @@ async fn cluster_with(timeout: Duration) -> Cluster {
     }
     for (id, first) in [(1, 0), (2, 3)] {
         index.lock().unwrap().volumes.push(Volume {
+            opened_at_secs: 0,
             id,
             state: VolumeState::Open,
             kind: VolumeKind::Replicated,

@@ -1,0 +1,29 @@
+[package]
+name = "satchel-files"
+description = "Satchel files service: files as block lists on top of the block store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+rusqlite.workspace = true
+satchel-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+
+[lints]
+workspace = true

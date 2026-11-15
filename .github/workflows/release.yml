@@ -1,0 +1,88 @@
+name: Release
+
+# On a v* tag: builds the local install for macOS and Linux and attaches it to
+# the GitHub release, where scripts/install.sh downloads it from.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and attach, for example v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          # Static (musl) Linux builds run on any distribution, old glibc or not.
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: ${{ matrix.target }}
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build and package
+        run: scripts/package-release.sh "${{ matrix.target }}" "$TAG"
+      - name: Smoke test the package
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: |
+          export SATCHEL_HOME="$RUNNER_TEMP/satchel"
+          mkdir -p "$SATCHEL_HOME"
+          tar -xzf "dist/satchel-${{ matrix.target }}.tar.gz" -C "$SATCHEL_HOME"
+          "$SATCHEL_HOME/bin/satchel" start
+          head -c 9000000 /dev/urandom > f.bin
+          curl -fsS -X POST --data-binary @f.bin "http://127.0.0.1:47800/v1/files?name=f.bin"
+          curl -fsS -o g.bin http://127.0.0.1:47800/v1/files/1/content
+          cmp f.bin g.bin
+          "$SATCHEL_HOME/bin/satchel" stop
+      - uses: actions/upload-artifact@v7
+        with:
+          name: satchel-${{ matrix.target }}
+          path: dist/
+
+  release:
+    name: Attach to the release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp scripts/install.sh dist/
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "Satchel $TAG" --generate-notes
+          fi
+          gh release upload "$TAG" dist/* --clobber
