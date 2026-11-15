@@ -65,6 +65,25 @@ cluster is deployed:
 Do not commit the budget amount or alert email. Save a screenshot of the active
 budget in the private team workspace, then record completion in issue #33.
 
+## Docker image
+
+`.github/workflows/image.yml` (#34) builds the Satchel image for `linux/arm64`,
+the CPU of the Graviton instances (DDL-015), and pushes it to GitHub Container
+Registry on every merge to `main` and on every `v*` tag:
+
+- `ghcr.io/frectrium/satchel:<commit SHA>`, which Terraform pulls (#20), so a
+  deployment always records exactly what it ran;
+- `ghcr.io/frectrium/satchel:latest`, or the tag name for a release.
+
+GitHub Container Registry, not Amazon ECR, because the workflow pushes with
+the repository's own `GITHUB_TOKEN`. No AWS credentials go into GitHub, and
+nothing in AWS has to exist before the image does. It builds on GitHub's arm64
+runner, so there's no emulation.
+
+The package must be public so the instances can pull it without a token. After
+the first push, a repository admin sets it once under **Package settings >
+Change visibility > Public**.
+
 ## Why state is local
 
 The course deployment is temporary and has one operator at a time. Local state
