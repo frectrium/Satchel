@@ -1,7 +1,21 @@
 # AWS infrastructure
 
-Issue #33 prepares the AWS and Terraform workflow for the Satchel cluster in
-issue #20. This directory deliberately contains no cluster resources yet.
+Terraform for the Satchel demo cluster in `ap-south-1` (#20). AWS is only for
+the viva demo and its rehearsal (DDL-016, #64): bring it up, run the demo,
+tear it down. The account workflow comes from #33.
+
+| File | What it creates |
+|---|---|
+| `network.tf` | A VPC with one public subnet in each of `ap-south-1a`, `1b` and `1c` (DDL-005) |
+| `security.tf` | A security group the instances share, operator access to ports 8080 and 3000, and a Session Manager role |
+| `instances.tf` | 9 `m7g.medium` storage nodes, 3 per zone, and one `m7g.large` control instance (DDL-015) |
+| `templates/` | Boot scripts: Docker, then the Satchel image from #34 |
+| `outputs.tf` | The API, calculator and Grafana URLs, and each node's instance ID |
+
+The control instance runs the frontend, Block Index, verifier (with the Master
+and repair), Prometheus and Grafana. There's no load generator VM or S3 bucket,
+since no measured experiment runs on AWS (#64). There's no SSH either: Session
+Manager gives a shell if one is needed.
 
 ## Fixed project settings
 
@@ -65,6 +79,25 @@ cluster is deployed:
 Do not commit the budget amount or alert email. Save a screenshot of the active
 budget in the private team workspace, then record completion in issue #33.
 
+## Docker image
+
+`.github/workflows/image.yml` (#34) builds the Satchel image for `linux/arm64`,
+the CPU of the Graviton instances (DDL-015), and pushes it to GitHub Container
+Registry on every merge to `main` and on every `v*` tag:
+
+- `ghcr.io/frectrium/satchel:<commit SHA>`, which Terraform pulls (#20), so a
+  deployment always records exactly what it ran;
+- `ghcr.io/frectrium/satchel:latest`, or the tag name for a release.
+
+GitHub Container Registry, not Amazon ECR, because the workflow pushes with
+the repository's own `GITHUB_TOKEN`. No AWS credentials go into GitHub, and
+nothing in AWS has to exist before the image does. It builds on GitHub's arm64
+runner, so there's no emulation.
+
+The package must be public so the instances can pull it without a token. After
+the first push, a repository admin sets it once under **Package settings >
+Change visibility > Public**.
+
 ## Why state is local
 
 The course deployment is temporary and has one operator at a time. Local state
@@ -108,6 +141,54 @@ Before every apply:
   `project=satchel`.
 
 Never run `terraform apply` from CI. Apply only a reviewed saved plan.
+
+## Bring up the demo cluster
+
+Pick the image from the "Publish image" workflow run for the commit you want
+(#34), and your own public address:
+
+```bash
+cd infra
+export AWS_PROFILE=satchel
+aws sts get-caller-identity
+SHA=<commit SHA from main>
+MYIP=$(curl -s https://checkip.amazonaws.com)/32
+terraform init
+terraform plan -out=satchel.tfplan \
+  -var "image=ghcr.io/frectrium/satchel:$SHA" \
+  -var "git_ref=$SHA" \
+  -var "operator_cidrs=[\"$MYIP\"]"
+terraform apply satchel.tfplan
+terraform output
+```
+
+The instances need about 3 minutes to install Docker and pull the image. Then:
+
+```bash
+API=$(terraform output -raw api_url)
+curl "$API/health"
+```
+
+`encode` stays `off` until the frontend reads coded volumes (#70). Pass
+`-var encode=on` after that.
+
+## Demo flow
+
+```bash
+head -c 1048576 /dev/urandom > block.bin
+HASH=$(shasum -a 256 block.bin | cut -d' ' -f1)
+curl -X PUT --data-binary @block.bin "$API/blocks/$HASH"    # 201, on 3 zones
+curl -s "$API/blocks/$HASH" | cmp - block.bin && echo same
+
+# Stop one storage node and read the block back
+NODE=$(terraform output -json nodes | python3 -c 'import json,sys; print(json.load(sys.stdin)["node-z1-1"]["instance_id"])')
+aws ec2 stop-instances --instance-ids "$NODE"
+curl -s "$API/blocks/$HASH" | cmp - block.bin && echo same
+aws ec2 start-instances --instance-ids "$NODE"
+```
+
+Grafana is at `terraform output -raw grafana_url`, and the calculator page at
+`terraform output -raw calculator_url`.
 
 ## Teardown checklist
 
