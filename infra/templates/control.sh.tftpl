@@ -1,0 +1,72 @@
+#!/bin/bash
+# Boots the control instance: the Block Index, the frontend, the verifier
+# (which also runs the Master and repair), Prometheus and Grafana. Everything
+# uses the host network, so services reach each other on 127.0.0.1 and the
+# storage nodes on their private IPs.
+set -euxo pipefail
+
+dnf install -y docker git
+systemctl enable --now docker
+
+until docker pull ${image}; do sleep 5; done
+
+docker run -d --name satchel-index --restart unless-stopped --network host \
+  -e RUST_LOG=info -e SATCHEL_PORT=8081 -e SATCHEL_DATA_DIR=/data \
+  -v satchel-index:/data \
+  ${image} satchel-index
+
+docker run -d --name satchel-api --restart unless-stopped --network host \
+  -e RUST_LOG=info -e SATCHEL_PORT=8080 \
+  -e SATCHEL_INDEX_URL=http://127.0.0.1:8081 \
+  -e SATCHEL_NODES='${satchel_nodes}' \
+  ${image} satchel-api
+
+docker run -d --name satchel-verifier --restart unless-stopped --network host \
+  -e RUST_LOG=info -e SATCHEL_PORT=8085 \
+  -e SATCHEL_INDEX_URL=http://127.0.0.1:8081 \
+  -e SATCHEL_NODES='${satchel_nodes}' \
+  -e SATCHEL_VERIFY_EVERY_SECS=60 \
+  -e SATCHEL_REPAIR_AFTER=${repair_after} \
+  -e SATCHEL_ENCODE=${encode} \
+  ${image} satchel-verifier
+
+# Dashboards and their provisioning come from the repository at the same
+# commit as the image.
+git clone --quiet https://github.com/frectrium/Satchel.git /opt/satchel
+git -C /opt/satchel checkout --quiet ${git_ref}
+mkdir -p /opt/prometheus
+cat > /opt/prometheus/prometheus.yml <<'EOF'
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: satchel
+    static_configs:
+      - targets: ["127.0.0.1:8080"]
+        labels: { service: api }
+      - targets: ["127.0.0.1:8081"]
+        labels: { service: index }
+      - targets: ["127.0.0.1:8085"]
+        labels: { service: verifier }
+%{ for zone, targets in node_targets ~}
+      - targets: ${jsonencode(targets)}
+        labels: { service: node, zone: ${zone} }
+%{ endfor ~}
+EOF
+
+# Grafana's provisioned datasource points at the Compose name "prometheus".
+sed -i 's#http://prometheus:9090#http://127.0.0.1:9090#' \
+  /opt/satchel/observability/grafana/provisioning/datasources/*.yml
+
+docker run -d --name prometheus --restart unless-stopped --network host \
+  -v /opt/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+  prom/prometheus:v3.5.0 \
+  --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.retention.time=1d
+
+docker run -d --name grafana --restart unless-stopped --network host \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
+  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/satchel-overview.json \
+  -v /opt/satchel/observability/grafana/provisioning:/etc/grafana/provisioning:ro \
+  -v /opt/satchel/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro \
+  grafana/grafana:12.1.0

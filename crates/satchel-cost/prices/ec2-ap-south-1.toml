@@ -1,0 +1,24 @@
+# Satchel's own cluster on EC2, Asia Pacific (Mumbai). Read from the AWS
+# Pricing Calculator on 2026-11-12 [P3]. Linux, on-demand.
+
+[meta]
+provider = "aws"
+service = "ec2"
+region = "ap-south-1"
+currency = "USD"
+accessed = "2026-11-12"
+source = "P3"
+
+[instances]
+# Storage node and control instance types from DDL-015.
+node = { type = "m7g.medium", usd_per_hour = 0.0292 }
+control = { type = "m7g.large", usd_per_hour = 0.0583 }
+
+[ebs.gp3]
+# 3,000 IOPS and 125 MB/s are included with every volume. Volumes of 1 GB to 64 TB.
+usd_per_gb_month = 0.0912
+max_volume_tb = 64
+
+[transfer]
+# Between Availability Zones, charged once out and once in.
+inter_az_usd_per_gb_each_way = 0.01
