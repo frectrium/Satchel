@@ -283,6 +283,7 @@ async fn cluster(threshold: Duration) -> Cluster {
             ));
         }
         idx.volumes.push(Volume {
+            opened_at_secs: 0,
             id: 1,
             state: VolumeState::Open,
             kind: VolumeKind::Replicated,
@@ -293,6 +294,7 @@ async fn cluster(threshold: Duration) -> Cluster {
             size: 26,
         });
         idx.volumes.push(Volume {
+            opened_at_secs: 0,
             id: 2,
             state: VolumeState::Closed,
             kind: VolumeKind::Rs63,

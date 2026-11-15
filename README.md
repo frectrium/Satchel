@@ -100,7 +100,7 @@ curl localhost:8080/health
 | `api` | 8080 | none |
 | `index` | 8081 | none |
 | `verifier` | 8085 | none |
-| `node-z1` / `node-z2` / `node-z3` | 8091 / 8092 / 8093 | z1 / z2 / z3 |
+| `node-z1-1` through `node-z3-3` | 8091 through 8099 | three nodes in each of z1, z2, z3 |
 | `prometheus` | 9090 | none |
 | `grafana` | 3000 | none |
 
@@ -110,7 +110,7 @@ You can also run a single service without Docker:
 SATCHEL_PORT=8090 SATCHEL_ZONE=z1 cargo run -p satchel-node
 ```
 
-> The services are skeletons that only serve `GET /health` and `GET /metrics` for now. See [Status](#status).
+> Storage nodes persist replicas and fragments under `/data`; use `SATCHEL_DATA_DIR` to select another directory outside Compose. See [Status](#status).
 
 ### Metrics and dashboards
 
@@ -145,16 +145,6 @@ CI runs the same script on every PR, in the **Integration tests (Compose)** job.
 
 ```bash
 cargo run --release -p satchel-bench -- --block-size 2MiB --clients 16 --out docs/results/e1/run.json
-```
-
-### Run the cost calculator
-
-`satchel-cost` prices the case workload (#15) on AWS, Azure, on-prem and Satchel on EC2, and finds the data volume at which owning breaks even. Every default price is in the TOML files in `crates/satchel-cost/prices/`, tagged with its Source Log ID, and the method is in [`docs/cost/method.md`](docs/cost/method.md). Inputs that are proposed, assumed or not yet sourced are listed in `flagged-inputs.csv` and on every run.
-
-```bash
-cargo run -p satchel-cost                                  # base case summary
-cargo run -p satchel-cost -- --list                        # sensitivity cases
-cargo run -p satchel-cost -- --prices crates/satchel-cost/prices --out docs/cost/output
 ```
 
 ## Repository layout
