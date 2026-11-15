@@ -67,15 +67,15 @@ Section owners are the owners of the linked issues, as #18 and #37 set out. A se
 
 | Section | Owner | Issue |
 |---|---|---|
-| Case study: background, problem, solution and outcome | Guru | #9, #12, #13 |
+| Case study: background, problem, solution and outcome | Jas | #9, #12, #13 |
 | Architecture: Magic Pocket and Satchel | Parshv | #11 |
-| Satchel implementation | Owners of the build issues | #19 |
+| Satchel implementation | Parshv | #19 |
 | Design Decision Log chapter | Parshv | #27 |
 | Testing approach and results | Jas | #31, #32 |
-| Experiments and results | Parshv, plus owners of the experiment issues | #22, #19 |
+| Experiments and results | Parshv (E1, E5), Guru (E2), Jas (E3, E4) | #22, #74 to #77 |
 | Cost and repatriation analysis | Jas | #26 |
-| Conclusions, limitations and future work | To be agreed | none |
-| References | To be agreed | none |
+| Conclusions, limitations and future work | All three, edited by Jas | none |
+| References | Jas | none |
 
 ## 4. Satchel components
 

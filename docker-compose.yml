@@ -112,7 +112,6 @@ services:
       SATCHEL_REPAIR_AFTER: 30s
     ports: ["8085:8085"]
     depends_on: [index, node-z1-1, node-z1-2, node-z1-3, node-z2-1, node-z2-2, node-z2-3, node-z3-1, node-z3-2, node-z3-3]
-
   files:
     <<: *satchel
     command: satchel-files

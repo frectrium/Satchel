@@ -86,6 +86,6 @@ Below about 10 PB, staff is nearly all of the cost, and it's the same staff that
 - **The team size is from one talk** [T9], about the storage software only. It doesn't count hardware engineering, network, security or management, so the staff cost is a lower bound *(our inference)*.
 - **A fixed team at every scale is our assumption.** A company storing 100 TB wouldn't hire 9 storage engineers. It would use fewer, or buy an appliance. #26 should test a smaller team at the low end of the sweep.
 - **The technician count comes from a staffing guideline** [H17], not from Dropbox, and it's per site. Dropbox's real number of sites and on-site staff isn't public. Hands-on work grows with the number of drives, which this doesn't model.
-- **US pay.** Indian pay [H12] is much lower. An Indian on-prem case would also need Indian power and colocation (the other part of #25) and an exchange rate, which isn't in the Source Log yet.
+- **US pay.** Indian pay [H12] is much lower. An Indian on-prem case would also need Indian power and colocation (the other part of #25) and an exchange rate: the RBI reference rate, Rs 94.8606 per USD on 2026-11-03 [H19].
 - **The cost of capital is an industry average** [H18], not Dropbox's own. Dropbox's lease rate [F3] is lower, because it's secured on the equipment.
 - **No wage growth or inflation,** since everything is in 2026 dollars.
