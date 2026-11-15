@@ -1,5 +1,5 @@
 //! Boilerplate every Satchel service shares: logging, config from the
-//! environment, a `/health` endpoint and graceful shutdown.
+//! environment, `/health` and `/metrics` endpoints and graceful shutdown.
 
 use std::net::SocketAddr;
 
@@ -64,8 +64,10 @@ pub fn health_router(config: &ServiceConfig) -> Router {
     )
 }
 
-/// Binds `config.addr` and serves `app` until Ctrl-C or SIGTERM.
+/// Binds `config.addr` and serves `app`, plus `GET /metrics`, until Ctrl-C
+/// or SIGTERM.
 pub async fn serve(config: &ServiceConfig, app: Router) -> anyhow::Result<()> {
+    let app = crate::metrics::instrument(app);
     let listener = tokio::net::TcpListener::bind(config.addr)
         .await
         .with_context(|| format!("binding {}", config.addr))?;

@@ -26,6 +26,7 @@ anyhow = "1"
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
+prometheus = { version = "0.14", default-features = false, features = ["process"] }
 reed-solomon-erasure = "6.0"
 reqwest = { version = "0.13", default-features = false }
 rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }

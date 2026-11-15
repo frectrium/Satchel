@@ -1,0 +1,14 @@
+#!/bin/bash
+# Boots one Satchel storage node: Docker, then satchel-node with its extents on
+# a Docker volume on the instance's gp3 root volume.
+set -euxo pipefail
+
+dnf install -y docker
+systemctl enable --now docker
+
+until docker pull ${image}; do sleep 5; done
+docker run -d --name satchel-node --restart unless-stopped \
+  -p 8090:8090 \
+  -e RUST_LOG=info -e SATCHEL_PORT=8090 -e SATCHEL_ZONE=${zone} \
+  -v satchel-data:/data \
+  ${image} satchel-node

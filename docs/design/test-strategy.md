@@ -93,6 +93,7 @@ Parameters: RS(6,3), so k = 6 data and m = 3 parity fragments (#14). Magic Pocke
 |---|---|
 | TS-SVC-1 | Every service in `docker-compose.yml` answers `GET /health` with `status: ok` and its service name. **This is the first integration test (#32)** |
 | TS-SVC-2 | Each service reads its port from `SATCHEL_PORT` and falls back to its default |
+| TS-SVC-3 | Every service answers `GET /metrics` in Prometheus text format, with request counts, latency histograms and process CPU and memory. Storage nodes also export `satchel_node_stored_bytes` (#21) |
 
 ## 4. Test data
 
