@@ -17,9 +17,13 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 
 /// Rebuilds the `None` slots of 9 fragments from any 6 others. Passed in
-/// so this module doesn't depend on the codec's crate: `main` gives it
-/// `satchel_common::ec::reconstruct` (#78).
+/// so tests can swap it: `main` gives it [`rs_reconstruct`].
 pub type Reconstruct = fn(&mut [Option<Vec<u8>>]) -> Result<(), String>;
+
+/// The RS(6,3) codec (#78) as a [`Reconstruct`].
+pub fn rs_reconstruct(fragments: &mut [Option<Vec<u8>>]) -> Result<(), String> {
+    satchel_common::ec::reconstruct(fragments).map_err(|e| e.to_string())
+}
 
 #[derive(Debug, Clone)]
 pub struct RepairConfig {
@@ -431,5 +435,24 @@ mod tests {
         assert_eq!(parse_duration("45"), Ok(Duration::from_secs(45)));
         assert!(parse_duration("soon").is_err());
         assert!(parse_duration("1h").is_err());
+    }
+
+    #[test]
+    fn rs_reconstruct_rebuilds_up_to_three_lost_fragments() {
+        let volume: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+        let original = satchel_common::ec::encode(&volume).unwrap();
+        let mut fragments: Vec<Option<Vec<u8>>> = original.iter().cloned().map(Some).collect();
+        for lost in [0, 4, 8] {
+            fragments[lost] = None;
+        }
+        rs_reconstruct(&mut fragments).unwrap();
+        let rebuilt: Vec<Vec<u8>> = fragments.into_iter().map(Option::unwrap).collect();
+        assert_eq!(rebuilt, original);
+
+        let mut too_few: Vec<Option<Vec<u8>>> = original.into_iter().map(Some).collect();
+        for lost in [1, 2, 3, 5] {
+            too_few[lost] = None;
+        }
+        assert!(rs_reconstruct(&mut too_few).is_err());
     }
 }

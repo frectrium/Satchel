@@ -27,9 +27,7 @@ async fn main() -> anyhow::Result<()> {
             repair_after: repair::parse_duration(&repair_after).map_err(anyhow::Error::msg)?,
             check_every: Duration::from_secs(5),
         },
-        // RS(6,3) rebuilds use satchel_common::ec::reconstruct once the codec
-        // (#78) is merged. Until then coded volumes can't be repaired.
-        None,
+        Some(repair::rs_reconstruct),
     );
     tracing::info!(repair_after, "repair config");
     let verifier = satchel_verifier::Verifier::new(verify);
