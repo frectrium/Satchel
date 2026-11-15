@@ -13,7 +13,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use satchel_common::cluster::{NodeAddr, Volume, VolumeKind, VolumeState};
+use satchel_common::cluster::{BlockEntry, NodeAddr, Volume, VolumeKind, VolumeState};
 use satchel_common::BlockHash;
 use satchel_verifier::repair::{RepairConfig, Repairer};
 
@@ -22,6 +22,7 @@ type Shared<T> = Arc<Mutex<T>>;
 #[derive(Default)]
 struct FakeIndex {
     volumes: Vec<Volume>,
+    blocks: Vec<(BlockHash, BlockEntry)>,
     /// Make the next N volume updates lose to another writer.
     conflicts: usize,
 }
@@ -57,7 +58,26 @@ fn fake_index(index: Shared<FakeIndex>) -> Router {
         *v = Volume { size, ..next };
         Json(v.clone()).into_response()
     }
+    async fn blocks(
+        State(i): State<Shared<FakeIndex>>,
+        Query(q): Query<HashMap<String, u64>>,
+    ) -> Json<Vec<serde_json::Value>> {
+        let i = i.lock().unwrap();
+        let rows = i.blocks.iter().filter(|(_, e)| e.volume == q["volume"]);
+        Json(
+            rows.map(|(h, e)| {
+                serde_json::json!({
+                    "hash": h.to_string(),
+                    "volume": e.volume,
+                    "offset": e.offset,
+                    "length": e.length,
+                })
+            })
+            .collect(),
+        )
+    }
     Router::new()
+        .route("/blocks", get(blocks))
         .route("/volumes", get(list))
         .route("/volumes/{id}", get(one).put(update))
         .with_state(index)
@@ -67,6 +87,8 @@ fn fake_index(index: Shared<FakeIndex>) -> Router {
 struct FakeNode {
     down: bool,
     replicas: HashMap<u64, Vec<u8>>,
+    /// Every `POST /extents/{volume}`: the volume and its `x-satchel-block`.
+    appends: Vec<(u64, String)>,
     fragments: HashMap<(u64, u32), Vec<u8>>,
     checksums: HashMap<(u64, u32), String>,
 }
@@ -95,13 +117,41 @@ fn fake_node(node: Shared<FakeNode>) -> Router {
             None => StatusCode::NOT_FOUND.into_response(),
         }
     }
-    async fn put_replica(
+    /// Appends one block, as the node (#67) does: the header must be the
+    /// body's hash, and the answer is the block's offset in the extent.
+    async fn append(
         State(n): State<Shared<FakeNode>>,
         Path(volume): Path<u64>,
+        headers: HeaderMap,
         body: Bytes,
+    ) -> Response {
+        let Some(hash) = headers.get("x-satchel-block") else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let hash = hash.to_str().unwrap().to_owned();
+        if hash != BlockHash::of(&body).to_string() {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        let mut n = n.lock().unwrap();
+        n.appends.push((volume, hash));
+        let extent = n.replicas.entry(volume).or_default();
+        let offset = extent.len();
+        extent.extend_from_slice(&body);
+        let body = serde_json::json!({ "offset": offset, "length": body.len() });
+        (StatusCode::CREATED, Json(body)).into_response()
+    }
+    async fn delete_replica(
+        State(n): State<Shared<FakeNode>>,
+        Path(volume): Path<u64>,
     ) -> StatusCode {
-        n.lock().unwrap().replicas.insert(volume, body.to_vec());
-        StatusCode::CREATED
+        match n.lock().unwrap().replicas.remove(&volume) {
+            Some(_) => StatusCode::NO_CONTENT,
+            None => StatusCode::NOT_FOUND,
+        }
+    }
+    /// The node has no whole-replica write.
+    async fn put_replica() -> StatusCode {
+        StatusCode::METHOD_NOT_ALLOWED
     }
     async fn get_fragment(
         State(n): State<Shared<FakeNode>>,
@@ -130,7 +180,13 @@ fn fake_node(node: Shared<FakeNode>) -> Router {
     }
     Router::new()
         .route("/health", get(health))
-        .route("/extents/{volume}", get(read).put(put_replica))
+        .route(
+            "/extents/{volume}",
+            get(read)
+                .post(append)
+                .delete(delete_replica)
+                .put(put_replica),
+        )
         .route(
             "/extents/{volume}/fragments/{index}",
             get(get_fragment).put(put_fragment),
@@ -195,6 +251,8 @@ async fn cluster(threshold: Duration) -> Cluster {
             nodes.push(n);
         }
     }
+    // The first 26 bytes are indexed: two blocks, then " blocks," whose
+    // index entry was deleted. The tail isn't part of the volume yet.
     let replica = b"0123456789 indexed blocks, then an unindexed tail".to_vec();
     for i in [0, 3, 6] {
         nodes[i].lock().unwrap().replicas.insert(1, replica.clone());
@@ -213,6 +271,17 @@ async fn cluster(threshold: Duration) -> Cluster {
     }
     {
         let mut idx = index.lock().unwrap();
+        for (offset, length) in [(0, 10), (10, 8)] {
+            let data = &replica[offset as usize..(offset + length) as usize];
+            idx.blocks.push((
+                BlockHash::of(data),
+                BlockEntry {
+                    volume: 1,
+                    offset,
+                    length,
+                },
+            ));
+        }
         idx.volumes.push(Volume {
             id: 1,
             state: VolumeState::Open,
@@ -279,11 +348,21 @@ async fn ts_fail_2_a_node_down_past_the_threshold_is_rebuilt_elsewhere() {
     assert_eq!(v1.nodes, ["node-z1-1", "node-z2-2", "node-z3-1"]);
     // Closed (gen 2), then the new placement (gen 3).
     assert_eq!(v1.generation, 3);
-    // Only the indexed part, the first 26 bytes, is copied.
-    assert_eq!(
-        c.nodes[4].lock().unwrap().replicas[&1],
-        b"0123456789 indexed blocks,".to_vec()
-    );
+    // Only the indexed part, the first 26 bytes, is copied, as two blocks
+    // and the deleted block's bytes, so the offsets match the index.
+    {
+        let z22 = c.nodes[4].lock().unwrap();
+        assert_eq!(z22.replicas[&1], b"0123456789 indexed blocks,".to_vec());
+        let hashes: Vec<String> = z22.appends.iter().map(|(_, h)| h.clone()).collect();
+        assert_eq!(
+            hashes,
+            [
+                BlockHash::of(b"0123456789").to_string(),
+                BlockHash::of(b" indexed").to_string(),
+                BlockHash::of(b" blocks,").to_string(),
+            ]
+        );
+    }
 
     // Every node holds a fragment of volume 2, so fragment 3 goes to another
     // node in zone z2, which now holds fragments 3 and 4.
@@ -364,4 +443,28 @@ async fn without_a_codec_coded_volumes_fail_and_say_why() {
     let failed = stats.history.iter().find(|r| r.error.is_some()).unwrap();
     assert_eq!(failed.volume, 2);
     assert!(failed.error.as_deref().unwrap().contains("codec"));
+}
+
+#[tokio::test]
+async fn a_corrupt_source_is_skipped_and_leftovers_on_the_target_are_cleared() {
+    let c = cluster(Duration::from_millis(100)).await;
+    // node-z1-1, the first source, has a flipped byte in its first block.
+    c.nodes[0].lock().unwrap().replicas.get_mut(&1).unwrap()[2] = b'X';
+    // node-z2-2, the target, holds half of an earlier attempt.
+    c.nodes[4]
+        .lock()
+        .unwrap()
+        .replicas
+        .insert(1, b"0123456789".to_vec());
+    c.nodes[3].lock().unwrap().down = true;
+    ticks(&c.repairer, 6).await;
+
+    let stats = c.repairer.stats().await;
+    assert_eq!(stats.failed, 0, "{stats:?}");
+    assert_eq!(volume(&c, 1).nodes[1], "node-z2-2");
+    // Copied from node-z3-1, starting from an empty extent.
+    assert_eq!(
+        c.nodes[4].lock().unwrap().replicas[&1],
+        b"0123456789 indexed blocks,".to_vec()
+    );
 }
