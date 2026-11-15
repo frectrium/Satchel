@@ -92,6 +92,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Ok(other) => anyhow::bail!("SATCHEL_BACKEND must be satchel or s3, not {other}"),
     };
-    let app = service::health_router(&config).merge(satchel_files::router(state));
+    // Behind CloudFront the API sits under /api, next to the static site.
+    let files = satchel_files::router(state);
+    let app = service::health_router(&config)
+        .merge(files.clone())
+        .nest("/api", files);
     service::serve(&config, app).await
 }

@@ -11,6 +11,7 @@
 #   SATCHEL_VERSION   release tag to install, for example v1.0.0 (default: latest)
 #   SATCHEL_HOME      install directory (default: ~/satchel)
 #   SATCHEL_NO_START  set to 1 to install without starting
+#   SATCHEL_ALLOWED_ORIGINS  website origins allowed to call the local API
 #   SATCHEL_RELEASE_BASE  where to download from (default: GitHub Releases)
 set -euo pipefail
 
@@ -67,13 +68,21 @@ mkdir -p "$SATCHEL_HOME"
 tar -xzf "$tmp/$asset" -C "$SATCHEL_HOME"
 chmod +x "$SATCHEL_HOME"/bin/*
 
-if [[ ! -f "$SATCHEL_HOME/config" ]]; then
-    cat >"$SATCHEL_HOME/config" <<'EOF'
-# Sourced by `satchel start`. Origins of the Satchel website, which may call
-# the files API on 127.0.0.1:47800 from the browser. Local pages are always
-# allowed.
-SATCHEL_ALLOWED_ORIGINS="${SATCHEL_ALLOWED_ORIGINS:-}"
-EOF
+# The website passes its own address, so the browser may call this install.
+origins="${SATCHEL_ALLOWED_ORIGINS:-}"
+[[ "$origins" =~ ^[A-Za-z0-9:/.,_-]*$ ]] || die "SATCHEL_ALLOWED_ORIGINS has unexpected characters"
+config="$SATCHEL_HOME/config"
+if [[ ! -f "$config" ]]; then
+    {
+        echo "# Sourced by 'satchel start'. Origins of the Satchel website, which may call"
+        echo "# the files API on 127.0.0.1:47800 from the browser, separated by commas."
+        echo "# Local pages are always allowed."
+        echo "SATCHEL_ALLOWED_ORIGINS=\"$origins\""
+    } >"$config"
+elif [[ -n "$origins" ]]; then
+    grep -v '^SATCHEL_ALLOWED_ORIGINS=' "$config" >"$tmp/config" || true
+    echo "SATCHEL_ALLOWED_ORIGINS=\"$origins\"" >>"$tmp/config"
+    cp "$tmp/config" "$config"
 fi
 
 say "Installed Satchel $(cat "$SATCHEL_HOME/VERSION") in $SATCHEL_HOME"

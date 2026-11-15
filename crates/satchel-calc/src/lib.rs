@@ -258,6 +258,118 @@ pub fn calculate_json(request: &str) -> Result<String, String> {
     serde_json::to_string(&response).map_err(|e| e.to_string())
 }
 
+/// What a handful of uploaded files cost per month, for the website's live
+/// panel: S3 Standard at its first price band, against owning the same
+/// bytes in Satchel's layout. The on-prem side is the marginal cost of the
+/// capacity only: hardware paid off over its life, drive power and
+/// colocation. Staff, switches and transit are fixed costs that only show
+/// at scale, so the calculator's full model covers them *(our inference)*.
+#[derive(Debug, Clone, Serialize)]
+pub struct FilesCost {
+    pub logical_bytes: f64,
+    pub s3: S3FilesCost,
+    pub satchel: SatchelFilesCost,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct S3FilesCost {
+    /// AWS bills binary GB (2^30 bytes) [P1].
+    pub billed_gb: f64,
+    pub usd_per_gb_month: f64,
+    pub storage_usd_month: f64,
+    /// One PUT per object, paid once.
+    pub puts_usd: f64,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SatchelFilesCost {
+    /// Raw bytes once volumes are closed and coded: RS(6,3) is 1.5x.
+    pub raw_bytes: f64,
+    pub overhead: f64,
+    /// Raw bytes while volumes are still open: 3 replicas.
+    pub open_raw_bytes: f64,
+    pub hardware_usd_month: f64,
+    pub power_usd_month: f64,
+    pub colocation_usd_month: f64,
+    pub total_usd_month: f64,
+    pub sources: Vec<(String, String)>,
+}
+
+const HOURS_PER_MONTH: f64 = 730.0;
+
+pub fn files_cost(logical_bytes: f64, objects: f64) -> Result<FilesCost, String> {
+    if !(logical_bytes >= 0.0 && objects >= 0.0) {
+        return Err("sizes must be zero or more".into());
+    }
+    let i = Inputs::base();
+    let aws = &i.aws;
+    let first = aws
+        .hot_storage_bands
+        .first()
+        .ok_or("the AWS price table has no storage bands")?;
+    let billed_gb = logical_bytes / aws.bytes_per_gb.value;
+    let s3 = S3FilesCost {
+        billed_gb,
+        usd_per_gb_month: first.usd,
+        storage_usd_month: billed_gb * first.usd,
+        puts_usd: objects / 1000.0 * aws.hot_put_per_1000.value,
+        source: aws.hot_put_per_1000.source.clone(),
+    };
+
+    let scheme = Scheme::satchel();
+    let raw = logical_bytes * scheme.coded_overhead();
+    let tb = raw / 1e12;
+    let p = &i.on_prem;
+    let o = &i.on_prem_options;
+    let recovery = satchel_cost::pricing::capital_recovery(o.cost_of_capital, o.life_years);
+    let kw = tb * p.drive_w_per_tb.value / 1000.0;
+    let hardware = tb * o.server_usd_per_raw_tb * recovery / 12.0;
+    let power = kw * HOURS_PER_MONTH * p.pue.value * p.electricity_usd_per_kwh.value;
+    let colocation = kw * p.colocation_usd_per_kw_month.value;
+    let satchel = SatchelFilesCost {
+        raw_bytes: raw,
+        overhead: scheme.coded_overhead(),
+        open_raw_bytes: logical_bytes * f64::from(scheme.open_replicas),
+        hardware_usd_month: hardware,
+        power_usd_month: power,
+        colocation_usd_month: colocation,
+        total_usd_month: hardware + power + colocation,
+        sources: [
+            ("server price per raw TB", &p.server_usd_per_raw_tb.source),
+            ("drive watts per TB", &p.drive_w_per_tb.source),
+            ("PUE", &p.pue.source),
+            ("electricity per kWh", &p.electricity_usd_per_kwh.source),
+            (
+                "colocation per kW-month",
+                &p.colocation_usd_per_kw_month.source,
+            ),
+            ("hardware life", &p.life_years.source),
+            ("cost of capital", &p.cost_of_capital.source),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.clone()))
+        .collect(),
+    };
+    Ok(FilesCost {
+        logical_bytes,
+        s3,
+        satchel,
+    })
+}
+
+/// [`files_cost`] from and to JSON: `{"logical_bytes": .., "objects": ..}`.
+pub fn files_cost_json(request: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct Req {
+        logical_bytes: f64,
+        #[serde(default)]
+        objects: f64,
+    }
+    let r: Req = serde_json::from_str(request).map_err(|e| format!("bad request: {e}"))?;
+    serde_json::to_string(&files_cost(r.logical_bytes, r.objects)?).map_err(|e| e.to_string())
+}
+
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use wasm_bindgen::prelude::*;
@@ -270,6 +382,11 @@ mod wasm {
     #[wasm_bindgen]
     pub fn calculate(request: &str) -> Result<String, JsError> {
         super::calculate_json(request).map_err(|e| JsError::new(&e))
+    }
+
+    #[wasm_bindgen]
+    pub fn files_cost(request: &str) -> Result<String, JsError> {
+        super::files_cost_json(request).map_err(|e| JsError::new(&e))
     }
 }
 
@@ -366,6 +483,24 @@ mod tests {
         let mut r = Request::default();
         r.workload.avg_block_bytes = 0.0;
         assert!(calculate_json(&serde_json::to_string(&r).unwrap()).is_err());
+    }
+
+    #[test]
+    fn files_cost_grows_with_the_data_and_cites_sources() {
+        let gib = 1_073_741_824.0;
+        let one = files_cost(gib, 1.0).unwrap();
+        assert!((one.s3.billed_gb - 1.0).abs() < 1e-12);
+        assert!((one.s3.storage_usd_month - one.s3.usd_per_gb_month).abs() < 1e-12);
+        assert_eq!(one.satchel.overhead, 1.5);
+        assert_eq!(one.satchel.raw_bytes, 1.5 * gib);
+        assert_eq!(one.satchel.open_raw_bytes, 3.0 * gib);
+        assert!(one.satchel.total_usd_month > 0.0);
+        let two = files_cost(2.0 * gib, 2.0).unwrap();
+        assert!((two.s3.storage_usd_month - 2.0 * one.s3.storage_usd_month).abs() < 1e-12);
+        assert!((two.satchel.total_usd_month - 2.0 * one.satchel.total_usd_month).abs() < 1e-9);
+        assert!(one.satchel.sources.iter().all(|(_, s)| !s.is_empty()));
+        assert!(files_cost(-1.0, 0.0).is_err());
+        assert!(files_cost_json(r#"{"logical_bytes": 1000}"#).is_ok());
     }
 
     #[test]
