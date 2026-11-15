@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# satchel: runs a Satchel cluster on this computer, as the "own it" side of
+# the demo. Every service listens on 127.0.0.1 only. The files API on port
+# 47800 is what the website talks to.
+#
+#   satchel start | stop | restart | status | logs [service] | version | uninstall
+#
+# Layout under $SATCHEL_HOME (default ~/satchel):
+#   bin/     the binaries and this script
+#   data/    the Block Index, 3 storage nodes (one per simulated zone) and the file manifest
+#   logs/    one log per service
+#   run/     pid files
+#   config   optional overrides, sourced at start (for example SATCHEL_ALLOWED_ORIGINS)
+set -euo pipefail
+
+SATCHEL_HOME="${SATCHEL_HOME:-$HOME/satchel}"
+BIN="$SATCHEL_HOME/bin"
+DATA="$SATCHEL_HOME/data"
+LOGS="$SATCHEL_HOME/logs"
+RUN="$SATCHEL_HOME/run"
+
+# Ports, all on 127.0.0.1. Uncommon on purpose, so they don't clash with
+# development servers.
+FILES_PORT=47800
+API_PORT=47810
+INDEX_PORT=47811
+VERIFIER_PORT=47815
+NODE_PORTS=(47821 47822 47823)
+
+# shellcheck disable=SC1091
+[[ -f "$SATCHEL_HOME/config" ]] && source "$SATCHEL_HOME/config"
+
+NODES="node-z1@z1=http://127.0.0.1:${NODE_PORTS[0]},node-z2@z2=http://127.0.0.1:${NODE_PORTS[1]},node-z3@z3=http://127.0.0.1:${NODE_PORTS[2]}"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'satchel: %s\n' "$*" >&2; exit 1; }
+
+running() {
+    local pidfile="$RUN/$1.pid"
+    [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
+}
+
+healthy() {
+    curl -fsS --max-time 1 "http://127.0.0.1:$1/health" >/dev/null 2>&1
+}
+
+wait_healthy() {
+    local name=$1 port=$2
+    for _ in $(seq 1 50); do
+        healthy "$port" && return 0
+        running "$name" || die "$name exited during start. See $LOGS/$name.log"
+        sleep 0.2
+    done
+    die "$name did not become healthy. See $LOGS/$name.log"
+}
+
+launch() {
+    local name=$1 binary=$2 port=$3
+    shift 3
+    if running "$name"; then
+        return 0
+    fi
+    if healthy "$port"; then
+        die "port $port is already in use by something else"
+    fi
+    env RUST_LOG="${RUST_LOG:-info}" SATCHEL_BIND=127.0.0.1 SATCHEL_PORT="$port" "$@" \
+        nohup "$BIN/$binary" >>"$LOGS/$name.log" 2>&1 &
+    echo $! >"$RUN/$name.pid"
+    wait_healthy "$name" "$port"
+}
+
+start() {
+    mkdir -p "$DATA" "$LOGS" "$RUN"
+    local zones=(z1 z2 z3)
+    launch index satchel-index "$INDEX_PORT" SATCHEL_DATA_DIR="$DATA/index"
+    for i in 0 1 2; do
+        launch "node-${zones[$i]}" satchel-node "${NODE_PORTS[$i]}" \
+            SATCHEL_ZONE="${zones[$i]}" SATCHEL_DATA_DIR="$DATA/node-${zones[$i]}"
+    done
+    launch api satchel-api "$API_PORT" \
+        SATCHEL_INDEX_URL="http://127.0.0.1:$INDEX_PORT" SATCHEL_NODES="$NODES"
+    # The verifier also runs the Master, which opens volumes. Coding stays
+    # off: RS(6,3) needs 9 nodes and this cluster has 3, one per zone.
+    launch verifier satchel-verifier "$VERIFIER_PORT" \
+        SATCHEL_INDEX_URL="http://127.0.0.1:$INDEX_PORT" SATCHEL_NODES="$NODES" \
+        SATCHEL_ENCODE=off SATCHEL_REPAIR_AFTER="${SATCHEL_REPAIR_AFTER:-15m}" \
+        SATCHEL_VERIFY_EVERY_SECS="${SATCHEL_VERIFY_EVERY_SECS:-60}"
+    launch files satchel-files "$FILES_PORT" \
+        SATCHEL_API_URL="http://127.0.0.1:$API_PORT" SATCHEL_NODES="$NODES" \
+        SATCHEL_DATA_DIR="$DATA/files" \
+        SATCHEL_ALLOWED_ORIGINS="${SATCHEL_ALLOWED_ORIGINS:-}"
+    # The first volume opens within a few seconds of the Master's first pass.
+    for _ in $(seq 1 50); do
+        if curl -fsS --max-time 1 "http://127.0.0.1:$INDEX_PORT/volumes?state=open" 2>/dev/null | grep -q '"id"'; then
+            break
+        fi
+        sleep 0.2
+    done
+    say "Satchel $(version) is running."
+    say "  Files API:  http://127.0.0.1:$FILES_PORT/v1/info"
+    say "  Data:       $DATA"
+    say "  Stop it:    $BIN/satchel stop"
+}
+
+stop() {
+    local stopped=0
+    for name in files verifier api node-z3 node-z2 node-z1 index; do
+        if running "$name"; then
+            kill "$(cat "$RUN/$name.pid")" 2>/dev/null || true
+            stopped=1
+        fi
+        rm -f "$RUN/$name.pid"
+    done
+    if [[ $stopped == 1 ]]; then
+        sleep 1
+        say "Satchel stopped."
+    else
+        say "Satchel is not running."
+    fi
+}
+
+status() {
+    local all=0
+    printf '%-10s %-6s %s\n' SERVICE PORT STATE
+    for entry in "files:$FILES_PORT" "api:$API_PORT" "index:$INDEX_PORT" "verifier:$VERIFIER_PORT" \
+        "node-z1:${NODE_PORTS[0]}" "node-z2:${NODE_PORTS[1]}" "node-z3:${NODE_PORTS[2]}"; do
+        local name=${entry%%:*} port=${entry#*:} state
+        if running "$name" && healthy "$port"; then
+            state=up
+        elif running "$name"; then
+            state=starting
+            all=1
+        else
+            state=down
+            all=1
+        fi
+        printf '%-10s %-6s %s\n' "$name" "$port" "$state"
+    done
+    return $all
+}
+
+version() {
+    cat "$SATCHEL_HOME/VERSION" 2>/dev/null || echo "dev"
+}
+
+uninstall() {
+    stop >/dev/null
+    printf 'Delete %s, including every file stored in Satchel? [y/N] ' "$SATCHEL_HOME"
+    read -r answer
+    if [[ $answer == y || $answer == Y ]]; then
+        rm -rf "$SATCHEL_HOME"
+        say "Removed $SATCHEL_HOME."
+    else
+        say "Kept $SATCHEL_HOME."
+    fi
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    status) status ;;
+    logs) tail -n 50 -f "$LOGS/${2:-files}.log" ;;
+    version) version ;;
+    uninstall) uninstall ;;
+    *)
+        say "usage: satchel start | stop | restart | status | logs [service] | version | uninstall"
+        exit 2
+        ;;
+esac

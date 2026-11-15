@@ -8,7 +8,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --workspace --locked \
     && mkdir -p /out \
     && cp target/release/satchel-api target/release/satchel-index \
-          target/release/satchel-node target/release/satchel-verifier /out/
+          target/release/satchel-node target/release/satchel-verifier \
+          target/release/satchel-files /out/
 
 FROM debian:bookworm-slim
 RUN apt-get update \

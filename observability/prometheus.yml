@@ -14,6 +14,8 @@ scrape_configs:
         labels: { service: index }
       - targets: ["verifier:8085"]
         labels: { service: verifier }
+      - targets: ["files:47800"]
+        labels: { service: files }
       - targets: ["node-z1-1:8090", "node-z1-2:8090", "node-z1-3:8090"]
         labels: { service: node, zone: z1 }
       - targets: ["node-z2-1:8090", "node-z2-2:8090", "node-z2-3:8090"]
