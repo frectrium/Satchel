@@ -64,6 +64,35 @@ flowchart LR
 
 > **Out of scope:** exabyte scale, production-grade durability guarantees, custom hardware (we model it on paper instead), and Dropbox's sync engine and metadata systems.
 
+## Install Satchel on your computer
+
+One command downloads the latest release for macOS or Linux into `~/satchel` and starts a small Satchel cluster: a Block Index, 3 storage nodes (one per simulated zone), the frontend, the verifier with the Master, and the files API on `127.0.0.1:47800`. Nothing needs root and nothing listens outside `127.0.0.1`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/frectrium/Satchel/main/scripts/install.sh | bash
+```
+
+Then store and read back a file:
+
+```bash
+curl -X POST --data-binary @photo.jpg "http://127.0.0.1:47800/v1/files?name=photo.jpg"
+curl http://127.0.0.1:47800/v1/files                       # what's stored
+curl -o copy.jpg http://127.0.0.1:47800/v1/files/1/content # read it back
+curl http://127.0.0.1:47800/v1/stats                       # blocks, dedup and raw bytes per node
+```
+
+`~/satchel/bin/satchel` starts, stops and checks the cluster (`start`, `stop`, `status`, `logs`, `uninstall`). Set `SATCHEL_VERSION=v1.0.0` to install a specific release, or `SATCHEL_HOME` for another directory.
+
+| Files API | What it does |
+|---|---|
+| `POST /v1/files?name=` | Store the request body as a file: split into 4 MiB blocks, each stored once by SHA-256 on 3 nodes |
+| `GET /v1/files` | Every file, newest first |
+| `GET /v1/files/{id}` | One file with its ordered block list |
+| `GET /v1/files/{id}/content` | The file's bytes, read block by block and checked against each hash |
+| `DELETE /v1/files/{id}` | Remove a file, and drop blocks no other file uses |
+| `GET /v1/stats` | Files, logical bytes, unique blocks, bytes saved by dedup, raw bytes on each node |
+| `GET /v1/info` | Version, block size, replica count and nodes |
+
 ## Getting started
 
 ### Prerequisites
@@ -156,7 +185,8 @@ Satchel/
 │   ├── satchel-api/        # Frontend
 │   ├── satchel-index/      # Block Index
 │   ├── satchel-node/       # Storage node (OSD)
-│   ├── satchel-verifier/   # Background verifier (Pocket Watch)
+│   ├── satchel-verifier/   # Background verifier (Pocket Watch) and the Master
+│   ├── satchel-files/      # Files as block lists, the API the local install serves
 │   ├── satchel-cost/       # Sizing and cost model behind the calculator
 │   ├── satchel-it/         # Integration tests against a running cluster
 │   └── satchel-bench/      # Load generator for the experiments
@@ -164,7 +194,7 @@ Satchel/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
 ├── observability/          # Prometheus config, Grafana provisioning and dashboards
-├── scripts/                # integration-test.sh
+├── scripts/                # install.sh, satchel launcher, integration-test.sh, package-release.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS
 ├── Dockerfile              # One image, all binaries
 └── docker-compose.yml      # Local 3-zone dev cluster
@@ -172,26 +202,22 @@ Satchel/
 
 ## Status
 
-**Current week:** Week 1, Sources & Summary (due Tuesday 20 October 2026). The plan for the week, with its tasks as sub-issues, is in [#10](https://github.com/frectrium/Satchel/issues/10).
+**v1.0.0**, the storage system the final report and viva (#29) describe. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Done
 
-- Project brief, Source Log template and docs structure
-- Cargo workspace with skeleton services (`api`, `index`, `node`, `verifier`) and a shared `BlockHash` type with tests
-- Dockerfile and a local 3-zone Docker Compose cluster
-- CI on every PR and on `main`: fmt, clippy, tests, Docker image build and a Compose config check
-- `main` protected: PRs need 1 approval, resolved conversations and green CI, and are squash-merged
-- Dependabot for Cargo, GitHub Actions and Docker
-- Issue forms, PR template, CODEOWNERS and a [contributing guide](CONTRIBUTING.md)
-- Issues for every week, grouped under each week's deliverable issue, on the [project board](https://github.com/users/frectrium/projects/1)
+- Storage path: frontend, Block Index and Replication Table on SQLite, storage nodes with fsync'd extents, Master with zone-aware volumes, RS(6,3) codec, verifier with the Disk Scrubber, Metadata Scanner and repair
+- Files on top of blocks: `satchel-files` with a manifest of block lists (DDL-020) and a one-command local install
+- Prometheus metrics and a Grafana dashboard for every service
+- Cost model: sizing, the `satchel-cost` engine and CLI, AWS, Azure and on-prem estimates and the break-even point
+- Load generator for Satchel and S3, integration tests on the Compose cluster
+- Terraform for the 3-AZ AWS demo cluster and an arm64 image on GitHub Container Registry
+- CI on every PR: fmt, clippy, tests, Docker build, Compose integration tests and Terraform checks
 
 ### Next
 
-- **Week 1:** collect primary sources and write the one-page summary
-- **Week 2:** case analysis, exercise plan, test strategy, integration test harness, AWS groundwork
-- **Week 3:** build the storage path, deploy to AWS with Terraform, run experiments and cost models
-- **Week 4:** final report and a tagged release
-- **Week 5:** viva
+- **v1.1:** the Satchel website: upload to S3 or to a local install, live cost of what's stored, the pricing calculator and a docs section
+- Reads from erasure-coded volumes (#70), horizontal scaling (#73) and the scaling experiment (#75)
 
 ## Roadmap
 

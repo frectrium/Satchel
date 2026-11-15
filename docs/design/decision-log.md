@@ -52,6 +52,7 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | [DDL-017](#ddl-017-prometheus-metrics-labelled-by-route-pattern) | Prometheus metrics labelled by route pattern | Observability | Proposed (deviation) |
 | [DDL-018](#ddl-018-volume-offsets-count-block-bytes-only) | Volume offsets count block bytes only | Storage node | Proposed |
 | [DDL-019](#ddl-019-the-index-refuses-new-blocks-on-closed-volumes) | The index refuses new blocks on closed volumes | Block Index | Proposed |
+| [DDL-020](#ddl-020-a-small-file-manifest-on-top-of-the-block-store) | A small file manifest on top of the block store | Files | Proposed (deviation) |
 
 ## Entries
 
@@ -263,3 +264,14 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | Source | [B2] |
 | What Satchel simplifies | The check lives in the index's write transaction instead of a separate protocol. A put that loses this race gets a 409, and the frontend retries on another open volume (DDL-006) |
 | Status / date | Proposed, 2026-11-14 |
+
+### DDL-020: A small file manifest on top of the block store
+
+| Field | Value |
+|---|---|
+| Satchel decision | `satchel-files` splits each file into blocks of up to 4 MiB, stores them by SHA-256 through the frontend and records the file's ordered block list in a SQLite manifest, with a reference count per block. Deleting a file drops the index entries of blocks no other file uses. The local install and the website use its `/v1/files` API |
+| Magic Pocket equivalent | Magic Pocket stores only blocks: files are split into blocks of up to 4 MB, and file metadata lives in separate systems such as FileJournal [B2] |
+| Dropbox's stated reasoning | Not stated for this split in our sources. Magic Pocket is described as the store for file content, with metadata elsewhere [B2] |
+| Source | [B2] |
+| What Satchel simplifies | Deliberate deviation: the brief keeps Dropbox's metadata systems out of scope, but the demo needs whole files. One SQLite file per install instead of a separate, replicated metadata service, so the manifest is a single point of failure *(our inference)*. Block lists and dedup follow Magic Pocket's model, so the blocks underneath are stored exactly as before |
+| Status / date | Proposed, 2026-11-15 |

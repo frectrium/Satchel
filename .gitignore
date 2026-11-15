@@ -62,3 +62,6 @@ Desktop.ini
 *~
 .fleet/
 .zed/
+
+# --- Release packages (scripts/package-release.sh) ---
+/dist/

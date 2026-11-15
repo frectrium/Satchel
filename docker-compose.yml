@@ -112,6 +112,13 @@ services:
       SATCHEL_REPAIR_AFTER: 30s
     ports: ["8085:8085"]
     depends_on: [index, node-z1-1, node-z1-2, node-z1-3, node-z2-1, node-z2-2, node-z2-3, node-z3-1, node-z3-2, node-z3-3]
+  files:
+    <<: *satchel
+    command: satchel-files
+    environment: { <<: *env, SATCHEL_PORT: "47800", SATCHEL_API_URL: "http://api:8080", SATCHEL_NODES: *nodes, SATCHEL_DATA_DIR: /data }
+    ports: ["47800:47800"]
+    volumes: ["files:/data"]
+    depends_on: [api]
 
   prometheus:
     image: prom/prometheus:v3.5.0
@@ -138,6 +145,7 @@ services:
 
 volumes:
   index:
+  files:
   node-z1-1:
   node-z1-2:
   node-z1-3:
