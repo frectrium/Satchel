@@ -11,10 +11,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use satchel_common::cluster::{NodeAddr, Volume, VolumeKind, VolumeState};
 use satchel_common::BlockHash;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+
+use crate::clients::ListedBlock;
 
 /// Rebuilds the `None` slots of 9 fragments from any 6 others. Passed in
 /// so tests can swap it: `main` gives it [`rs_reconstruct`].
@@ -331,13 +334,18 @@ impl Repairer {
     }
 
     /// Copies the first `size` bytes of a healthy replica, the indexed part,
-    /// to `target` with `PUT /extents/{volume}`.
+    /// to `target`. The node API (#67) only appends, so the copy is rebuilt
+    /// block by block with `POST /extents/{volume}` in offset order, and
+    /// each append must land at the offset the index holds. Bytes between
+    /// indexed blocks (deleted blocks, DDL-013, or writes never indexed) go
+    /// in as one unindexed record each, which keeps every later offset.
     async fn copy_replica(
         &self,
         v: &Volume,
         failed: &NodeAddr,
         target: &NodeAddr,
     ) -> Result<u64, String> {
+        let plan = self.replica_plan(v).await?;
         let mut last = String::from("no other replica");
         for source in v
             .nodes
@@ -345,36 +353,95 @@ impl Repairer {
             .filter(|id| *id != &failed.id)
             .filter_map(|id| self.node(id))
         {
-            let url = format!("{}/extents/{}?offset=0&length={}", source.url, v.id, v.size);
-            let bytes = match self.http.get(&url).send().await {
-                Ok(r) if r.status().is_success() => r.bytes().await.map_err(err(&url))?,
-                Ok(r) => {
-                    last = format!("{url}: HTTP {}", r.status());
-                    continue;
+            match self.read_replica(source, v, &plan).await {
+                Ok(bytes) => {
+                    self.append_replica(target, v, &plan, &bytes).await?;
+                    return Ok(v.size);
                 }
-                Err(e) => {
-                    last = format!("{url}: {e}");
-                    continue;
-                }
-            };
-            if bytes.len() as u64 != v.size {
-                last = format!("{url}: got {} bytes, wanted {}", bytes.len(), v.size);
-                continue;
+                Err(e) => last = e,
             }
-            let put = format!("{}/extents/{}", target.url, v.id);
-            let r = self
-                .http
-                .put(&put)
-                .body(bytes)
-                .send()
-                .await
-                .map_err(err(&put))?;
-            if r.status().as_u16() != 201 {
-                return Err(format!("{put}: HTTP {}", r.status()));
-            }
-            return Ok(v.size);
         }
         Err(last)
+    }
+
+    /// The records to append, in offset order, covering exactly `0..size`.
+    async fn replica_plan(&self, v: &Volume) -> Result<Vec<Record>, String> {
+        let url = format!("{}/blocks?volume={}", self.config.index_url, v.id);
+        let r = self.http.get(&url).send().await.map_err(err(&url))?;
+        if !r.status().is_success() {
+            return Err(format!("{url}: HTTP {}", r.status()));
+        }
+        let blocks: Vec<ListedBlock> = r.json().await.map_err(err(&url))?;
+        plan_records(blocks, v.size)
+    }
+
+    /// Reads `0..size` from `source` and checks every indexed block in it.
+    async fn read_replica(
+        &self,
+        source: &NodeAddr,
+        v: &Volume,
+        plan: &[Record],
+    ) -> Result<Bytes, String> {
+        let url = format!("{}/extents/{}?offset=0&length={}", source.url, v.id, v.size);
+        let r = self.http.get(&url).send().await.map_err(err(&url))?;
+        if !r.status().is_success() {
+            return Err(format!("{url}: HTTP {}", r.status()));
+        }
+        let bytes = r.bytes().await.map_err(err(&url))?;
+        if bytes.len() as u64 != v.size {
+            return Err(format!(
+                "{url}: got {} bytes, wanted {}",
+                bytes.len(),
+                v.size
+            ));
+        }
+        for rec in plan {
+            if let Some(hash) = rec.hash {
+                if BlockHash::of(rec.slice(&bytes)) != hash {
+                    return Err(format!("{url}: block {hash} doesn't match its hash"));
+                }
+            }
+        }
+        Ok(bytes)
+    }
+
+    /// Clears anything a failed earlier attempt left on `target`, then
+    /// appends the records one by one.
+    async fn append_replica(
+        &self,
+        target: &NodeAddr,
+        v: &Volume,
+        plan: &[Record],
+        bytes: &Bytes,
+    ) -> Result<(), String> {
+        let url = format!("{}/extents/{}", target.url, v.id);
+        let r = self.http.delete(&url).send().await.map_err(err(&url))?;
+        if !(r.status().is_success() || r.status().as_u16() == 404) {
+            return Err(format!("DELETE {url}: HTTP {}", r.status()));
+        }
+        for rec in plan {
+            let body = Bytes::copy_from_slice(rec.slice(bytes));
+            let hash = rec.hash.unwrap_or_else(|| BlockHash::of(&body));
+            let r = self
+                .http
+                .post(&url)
+                .header("x-satchel-block", hash.to_string())
+                .body(body)
+                .send()
+                .await
+                .map_err(err(&url))?;
+            if r.status().as_u16() != 201 {
+                return Err(format!("POST {url}: HTTP {}", r.status()));
+            }
+            let appended: Appended = r.json().await.map_err(err(&url))?;
+            if appended.offset != rec.offset {
+                return Err(format!(
+                    "POST {url}: appended at {}, the index has {}",
+                    appended.offset, rec.offset
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Reads the surviving fragments, rebuilds fragment `index` and stores
@@ -424,6 +491,65 @@ impl Repairer {
     }
 }
 
+/// One append when a replica is copied: an indexed block, or the bytes
+/// between two of them (`hash: None`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Record {
+    offset: u64,
+    length: u64,
+    hash: Option<BlockHash>,
+}
+
+impl Record {
+    fn slice<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
+        &bytes[self.offset as usize..(self.offset + self.length) as usize]
+    }
+}
+
+/// The node's answer to `POST /extents/{volume}` (#67).
+#[derive(Deserialize)]
+struct Appended {
+    offset: u64,
+}
+
+/// Lays the indexed blocks of a volume out over `0..size`, filling the gaps.
+/// Blocks past `size` aren't part of the volume yet and are left out.
+fn plan_records(mut blocks: Vec<ListedBlock>, size: u64) -> Result<Vec<Record>, String> {
+    blocks.sort_by_key(|b| b.entry.offset);
+    let mut plan = Vec::new();
+    let mut at = 0;
+    for b in blocks {
+        let (offset, length) = (b.entry.offset, b.entry.length);
+        if offset + length > size {
+            continue;
+        }
+        if offset < at {
+            return Err(format!("block {} overlaps the one before it", b.hash));
+        }
+        if offset > at {
+            plan.push(Record {
+                offset: at,
+                length: offset - at,
+                hash: None,
+            });
+        }
+        plan.push(Record {
+            offset,
+            length,
+            hash: Some(b.hash),
+        });
+        at = offset + length;
+    }
+    if at < size {
+        plan.push(Record {
+            offset: at,
+            length: size - at,
+            hash: None,
+        });
+    }
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,6 +561,44 @@ mod tests {
         assert_eq!(parse_duration("45"), Ok(Duration::from_secs(45)));
         assert!(parse_duration("soon").is_err());
         assert!(parse_duration("1h").is_err());
+    }
+
+    fn listed(data: &[u8], offset: u64, length: u64) -> ListedBlock {
+        let hash = BlockHash::of(&data[offset as usize..(offset + length) as usize]);
+        ListedBlock {
+            hash,
+            entry: satchel_common::cluster::BlockEntry {
+                volume: 1,
+                offset,
+                length,
+            },
+        }
+    }
+
+    #[test]
+    fn plan_fills_gaps_so_every_block_keeps_its_offset() {
+        let data = b"aaaabbbbccccdddd";
+        // Unsorted, block 2 (8..12) deleted, block 4 past the volume's size.
+        let blocks = vec![listed(data, 4, 4), listed(data, 0, 4), listed(data, 12, 4)];
+        let plan = plan_records(blocks, 14).unwrap();
+        let spans: Vec<_> = plan
+            .iter()
+            .map(|r| (r.offset, r.length, r.hash.is_some()))
+            .collect();
+        assert_eq!(
+            spans,
+            [(0, 4, true), (4, 4, true), (8, 6, false)],
+            "the gap and the indexed part of the tail become one record"
+        );
+        assert_eq!(plan.iter().map(|r| r.length).sum::<u64>(), 14);
+    }
+
+    #[test]
+    fn plan_of_an_empty_volume_is_empty_and_overlaps_are_refused() {
+        assert!(plan_records(Vec::new(), 0).unwrap().is_empty());
+        let data = b"aaaabbbb";
+        let overlapping = vec![listed(data, 0, 6), listed(data, 4, 4)];
+        assert!(plan_records(overlapping, 8).is_err());
     }
 
     #[test]
