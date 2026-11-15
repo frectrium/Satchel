@@ -32,6 +32,13 @@ function bytes(x) {
   return `${Math.round(x)} B`;
 }
 
+// Binary units, for limits set in MiB and GiB.
+function ibytes(x) {
+  if (x >= 1073741824) return `${+(x / 1073741824).toFixed(2)} GiB`;
+  if (x >= 1048576) return `${+(x / 1048576).toFixed(2)} MiB`;
+  return bytes(x);
+}
+
 function usd(x) {
   if (!Number.isFinite(x)) return "n/a";
   const a = Math.abs(x);
@@ -177,7 +184,7 @@ async function mountWorkspace(container, target) {
   let info = {};
   try { info = await api(target, "/v1/info"); } catch { /* shown by stats */ }
   $(".limit", ws).textContent = info.max_file_bytes
-    ? `Up to ${bytes(info.max_file_bytes)} per file, ${bytes(info.max_total_bytes)} in total`
+    ? `Up to ${ibytes(info.max_file_bytes)} per file, ${ibytes(info.max_total_bytes)} in total`
     : "No size limits: it's your own disk";
   const queue = async (files) => {
     for (const f of files) await uploadOne(ws, target, f, info);
@@ -200,7 +207,7 @@ function uploadOne(ws, target, file, info) {
       el("div", { class: "progress" }, bar), status, detail);
     $(".uploads", ws).prepend(row);
     if (info.max_file_bytes && file.size > info.max_file_bytes) {
-      status.textContent = `Too big: the limit is ${bytes(info.max_file_bytes)} per file`;
+      status.textContent = `Too big: the limit is ${ibytes(info.max_file_bytes)} per file`;
       status.className = "error";
       return resolve();
     }
