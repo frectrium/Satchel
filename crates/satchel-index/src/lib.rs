@@ -21,7 +21,7 @@ use satchel_common::BlockHash;
 use serde::{Deserialize, Serialize};
 
 pub use store::Store;
-use store::{PutBlock, UpdateVolume};
+use store::{MoveBlock, PutBlock, UpdateVolume};
 
 /// One row of `GET /blocks?volume=`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +34,12 @@ pub struct ListedBlock {
 #[derive(Deserialize)]
 struct NewVolume {
     nodes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct MoveRequest {
+    from: BlockEntry,
+    to: BlockEntry,
 }
 
 #[derive(Serialize)]
@@ -51,9 +57,13 @@ pub fn router(store: Store) -> Router {
             "/blocks/{hash}",
             get(get_block).put(put_block).delete(delete_block),
         )
+        .route("/blocks/{hash}/move", axum::routing::post(move_block))
         .route("/blocks", get(list_blocks))
         .route("/volumes", get(list_volumes).post(create_volume))
-        .route("/volumes/{id}", get(get_volume).put(update_volume))
+        .route(
+            "/volumes/{id}",
+            get(get_volume).put(update_volume).delete(delete_volume),
+        )
         .with_state(Arc::new(store))
 }
 
@@ -130,6 +140,26 @@ async fn delete_block(State(s): State<AppState>, Path(raw): Path<String>) -> Res
     match blocking(&s, move |st| st.delete_block(&hash)).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => error(StatusCode::NOT_FOUND, "no such block"),
+        Err(e) => internal(e),
+    }
+}
+
+async fn move_block(
+    State(s): State<AppState>,
+    Path(raw): Path<String>,
+    Json(body): Json<MoveRequest>,
+) -> Response {
+    let Ok(hash) = raw.parse::<BlockHash>() else {
+        return bad_hash();
+    };
+    match blocking(&s, move |st| st.move_block(&hash, &body.from, &body.to)).await {
+        Ok(MoveBlock::Moved(entry)) => Json(entry).into_response(),
+        Ok(MoveBlock::NotFound) => error(StatusCode::NOT_FOUND, "no such block"),
+        Ok(MoveBlock::SourceChanged(entry)) => (StatusCode::CONFLICT, Json(entry)).into_response(),
+        Ok(MoveBlock::NoVolume) => error(StatusCode::BAD_REQUEST, "no such destination volume"),
+        Ok(MoveBlock::VolumeNotOpen) => {
+            error(StatusCode::CONFLICT, "destination volume is not open")
+        }
         Err(e) => internal(e),
     }
 }
@@ -217,6 +247,17 @@ async fn update_volume(
             }),
         )
             .into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+async fn delete_volume(State(s): State<AppState>, Path(id): Path<u64>) -> Response {
+    match blocking(&s, move |st| st.delete_volume(id)).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => error(
+            StatusCode::CONFLICT,
+            "only an empty closed volume can be retired",
+        ),
         Err(e) => internal(e),
     }
 }

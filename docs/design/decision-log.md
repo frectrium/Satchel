@@ -40,12 +40,12 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | [DDL-005](#ddl-005-three-aws-availability-zones-one-cell) | Three AWS availability zones, one cell | Zones and cells | Proposed |
 | [DDL-006](#ddl-006-three-synchronous-replicas-one-per-zone-for-new-data) | Three synchronous replicas, one per zone, for new data | Replication | Proposed |
 | [DDL-007](#ddl-007-rs63-erasure-coding-with-three-fragments-per-zone) | RS(6,3) erasure coding with three fragments per zone | Erasure coding | Proposed |
-| [DDL-008](#ddl-008-closed-volumes-are-erasure-coded-in-the-background) | Closed volumes are erasure coded in the background | Erasure coding | Proposed |
+| [DDL-008](#ddl-008-closed-volumes-are-erasure-coded-by-manual-compaction) | Closed volumes are erasure coded by manual compaction | Erasure coding | Proposed |
 | [DDL-009](#ddl-009-master-duties-run-off-the-data-path) | Master duties run off the data path | Coordination | Proposed |
 | [DDL-010](#ddl-010-repair-after-a-configurable-offline-threshold) | Repair after a configurable offline threshold | Repair | Proposed |
 | [DDL-011](#ddl-011-storage-nodes-store-extents-as-files-and-fsync-before-acknowledging) | Storage nodes store extents as files and fsync before acknowledging | Storage node | Proposed |
 | [DDL-012](#ddl-012-verifier-implements-the-disk-scrubber-and-metadata-scanner) | Verifier implements the Disk Scrubber and Metadata Scanner | Verifier | Proposed |
-| [DDL-013](#ddl-013-deletes-remove-the-index-entry-no-compaction) | Deletes remove the index entry, no compaction | Deletes | Proposed |
+| [DDL-013](#ddl-013-deletes-remove-the-index-entry-and-compaction-reclaims-space) | Deletes remove the index entry and compaction reclaims space | Deletes | Proposed |
 | [DDL-014](#ddl-014-satchel-is-written-in-rust) | Satchel is written in Rust | All | Proposed |
 | [DDL-015](#ddl-015-graviton-ec2-instances-for-measured-runs) | Graviton EC2 instances for measured runs | Deployment | Proposed (deviation), narrowed by DDL-016 |
 | [DDL-016](#ddl-016-experiments-run-on-the-local-cluster-aws-only-for-the-demo) | Experiments run on the local cluster, AWS only for the demo | Deployment | Proposed (deviation) |
@@ -126,22 +126,22 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 
 | Field | Value |
 |---|---|
-| Satchel decision | Closed volumes are encoded with Reed-Solomon RS(6,3): 6 data fragments and 3 parity fragments on 9 different nodes, 3 per zone. Any 3 fragments can be lost, so a whole zone can be lost. Data fragments are contiguous slices of the volume, so most blocks are read whole from one node |
+| Satchel decision | Compacted volumes use Reed-Solomon RS(6,3): 6 data fragments and 3 parity fragments, 3 slots per zone. A zone with 3 or more nodes uses one node per slot. A smaller zone reuses its available node or nodes for its 3 slots. Any 3 fragments can be lost, so a whole zone can be lost. Data fragments are contiguous slices of the volume, so most blocks are read whole from one node |
 | Magic Pocket equivalent | In 2024 Dropbox named RS(6,3) and LRC(12,2,2) as its production codes [T9]. RS(6,3) has 1.5x overhead [T8]. The coding lets "most reads only hit a single disk spindle", with reconstruction on failure [B2] |
 | Dropbox's stated reasoning | Erasure coding gives "the same level of fault tolerance as replication, but with significantly less additional storage" [B15]. Volumes are coded "for storage efficiency" [B2] |
 | Source | [B2], [B15], [T8], [T9] |
-| What Satchel simplifies | Plain Reed-Solomon, not LRC, so rebuilding one lost fragment reads 6 others instead of a smaller local group *(our inference)*. No cross-region cold tier with XOR parity [B5]. The 2024 parameters are used even though the 2016 ones were never published [B3]. Placing 3 fragments per zone so a zone loss is survivable is our layout *(our inference)*; Dropbox hasn't published fragment placement |
+| What Satchel simplifies | Plain Reed-Solomon, not LRC, so rebuilding one lost fragment reads 6 others instead of a smaller local group *(our inference)*. No cross-region cold tier with XOR parity [B5]. The 2024 parameters are used even though the 2016 ones were never published [B3]. Placing 3 fragment slots per zone so a zone loss is survivable is our layout *(our inference)*; Dropbox hasn't published fragment placement. The 3-node local install puts all 3 slots in each zone on its one node, so losing that node still loses only 3 of 9 fragments |
 | Status / date | Proposed, 2026-10-28 |
 
-### DDL-008: Closed volumes are erasure coded in the background
+### DDL-008: Closed volumes are erasure coded by manual compaction
 
 | Field | Value |
 |---|---|
-| Satchel decision | When a volume closes, the Master schedules an encode job. A storage node acting as Volume Manager reads one replica, writes the 9 fragments, and the Master commits by bumping the volume's generation and switching its type in the Replication Table. The 3 replicas are then deleted. Encoding can be turned off for experiments that need replicated data only |
+| Satchel decision | A volume stays 3-way replicated when it closes. `satchel compact` asks the Master to close written volumes, rewrite live blocks where deletes left gaps, encode RS(6,3) fragments, validate the new layout, commit the generation and only then delete the old layout. It leaves volumes replicated if a zone is unavailable |
 | Magic Pocket equivalent | Closed volumes are aggregated and erasure coded in the background [B2][B5]. Volume Managers do the heavy work and run on the storage machines "to amortize their heavy network-capacity demands across idle storage hardware" [B2]. By 2026 a Live Coder writes some data straight into coded volumes [B15] |
 | Dropbox's stated reasoning | Keeps background work off the live write path and uses idle storage capacity [B2]. Coding saves space without losing fault tolerance [B15] |
 | Source | [B2], [B5], [B15] |
-| What Satchel simplifies | No Live Coder. Encoding starts as soon as a volume closes, because Dropbox hasn't published how long volumes stay replicated (architecture notes, section 6) |
+| What Satchel simplifies | No Live Coder. Compaction is a manual terminal command instead of a background batch scheduler, because Dropbox hasn't published how long volumes stay replicated (architecture notes, section 6). The Master and verifier share one process |
 | Status / date | Proposed, 2026-10-28 |
 
 ### DDL-009: Master duties run off the data path
@@ -188,15 +188,15 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | What Satchel simplifies | Two of the six verifiers. No Trash Inspector, Extent Referee, Storage Watcher or Cross-zone Verifier [B3]. Findings are reported, and repair is left to the Master (DDL-010) |
 | Status / date | Proposed, 2026-10-28 |
 
-### DDL-013: Deletes remove the index entry, no compaction
+### DDL-013: Deletes remove the index entry and compaction reclaims space
 
 | Field | Value |
 |---|---|
-| Satchel decision | `DELETE /blocks/{hash}` removes the Block Index entry, after which the block can't be read. The bytes stay in their volume. Satchel doesn't reclaim the space |
+| Satchel decision | `DELETE /blocks/{hash}` removes the Block Index entry, after which the block can't be read. Its bytes stay in the volume until `satchel compact` copies the live blocks into a new volume, validates and codes it, then retires the old layout |
 | Magic Pocket equivalent | Deletes don't free space straight away. Garbage collection marks unreferenced blobs, and compaction copies live blobs into new volumes and retires the old ones. Deleted extents go to a trash area and are only unlinked after inspection [B3][B15] |
 | Dropbox's stated reasoning | Closed volumes are immutable, so space comes back only through compaction, which Dropbox rate-limits and keeps within a cell [B15] |
 | Source | [B3], [B15] |
-| What Satchel simplifies | No garbage collection, compaction or trash. Satchel has no file layer, so it doesn't count references: deleting a deduplicated block deletes it for every writer. Experiments don't delete, so this doesn't affect the measurements *(our inference)* |
+| What Satchel simplifies | No garbage collector or trash area. Satchel compacts only when asked, not rate-limited in the background. It has no file-level reference count, so deleting a deduplicated block deletes it for every writer |
 | Status / date | Proposed, 2026-10-28 |
 
 ### DDL-014: Satchel is written in Rust

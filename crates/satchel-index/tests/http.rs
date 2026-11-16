@@ -217,6 +217,51 @@ async fn closed_volumes_take_no_new_blocks() {
 }
 
 #[tokio::test]
+async fn a_compactor_can_move_a_block_then_retire_its_empty_source() {
+    let (c, url) = (reqwest::Client::new(), index().await);
+    let source = open_volume(&c, &url).await;
+    let target = open_volume(&c, &url).await;
+    let from = BlockEntry {
+        volume: source.id,
+        offset: 9,
+        length: 4,
+    };
+    let to = BlockEntry {
+        volume: target.id,
+        offset: 0,
+        length: 4,
+    };
+    put(&c, &url, &hash(1), from).await;
+    let moved = c
+        .post(format!("{url}/blocks/{}/move", hash(1)))
+        .json(&json!({"from": from, "to": to}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(moved.status(), StatusCode::OK);
+    assert_eq!(moved.json::<BlockEntry>().await.unwrap(), to);
+
+    let closed = Volume {
+        state: VolumeState::Closed,
+        generation: 2,
+        ..source.clone()
+    };
+    c.put(format!("{url}/volumes/{}", source.id))
+        .json(&closed)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        c.delete(format!("{url}/volumes/{}", source.id))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
 async fn lists_for_the_master_and_the_metadata_scan() {
     let (c, url) = (reqwest::Client::new(), index().await);
     let a = open_volume(&c, &url).await;

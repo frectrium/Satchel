@@ -27,7 +27,6 @@ docker run -d --name satchel-verifier --restart unless-stopped --network host \
   -e SATCHEL_NODES='${satchel_nodes}' \
   -e SATCHEL_VERIFY_EVERY_SECS=60 \
   -e SATCHEL_REPAIR_AFTER=${repair_after} \
-  -e SATCHEL_ENCODE=${encode} \
   ${image} satchel-verifier
 
 # Dashboards and their provisioning come from the repository at the same

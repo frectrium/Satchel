@@ -78,7 +78,6 @@ resource "aws_instance" "control" {
     image         = var.image
     git_ref       = var.git_ref
     satchel_nodes = local.satchel_nodes
-    encode        = var.encode
     repair_after  = var.repair_after
     node_targets = {
       for z in ["z1", "z2", "z3"] : z => [

@@ -13,12 +13,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::{extract::State, routing::get, routing::post, Json, Router};
+use axum::{extract::State, response::IntoResponse, routing::get, routing::post, Json, Router};
 use satchel_common::cluster::NodeAddr;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
 use clients::Clients;
+use master::Master;
 use scan::{Check, Pass};
 
 #[derive(Debug, Clone)]
@@ -146,4 +147,22 @@ pub fn repair_router(repairer: Arc<repair::Repairer>) -> Router {
             get(|State(r): State<Arc<repair::Repairer>>| async move { Json(r.stats().await) }),
         )
         .with_state(repairer)
+}
+
+pub fn compact_router(master: Arc<Master>) -> Router {
+    Router::new()
+        .route(
+            "/compact",
+            post(|State(master): State<Arc<Master>>| async move {
+                match master.compact().await {
+                    Ok(report) => (axum::http::StatusCode::OK, Json(report)).into_response(),
+                    Err(error) => (
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                        error.to_string(),
+                    )
+                        .into_response(),
+                }
+            }),
+        )
+        .with_state(master)
 }

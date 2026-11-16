@@ -34,10 +34,11 @@ async fn main() -> anyhow::Result<()> {
     let verifier = satchel_verifier::Verifier::new(verify);
     tokio::spawn(verifier.clone().run_forever());
     tokio::spawn(repairer.clone().run_forever());
+    let master = std::sync::Arc::new(Master::new(MasterConfig::from_env()?));
     let app = service::health_router(&config)
         .merge(satchel_verifier::router(verifier))
-        .merge(satchel_verifier::repair_router(repairer));
-    let master = Master::new(MasterConfig::from_env()?);
+        .merge(satchel_verifier::repair_router(repairer))
+        .merge(satchel_verifier::compact_router(master.clone()));
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         loop {
