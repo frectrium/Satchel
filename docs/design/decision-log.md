@@ -196,7 +196,7 @@ Source IDs refer to the [Source Log](../sources/README.md). Background for most 
 | Magic Pocket equivalent | Deletes don't free space straight away. Garbage collection marks unreferenced blobs, and compaction copies live blobs into new volumes and retires the old ones. Deleted extents go to a trash area and are only unlinked after inspection [B3][B15] |
 | Dropbox's stated reasoning | Closed volumes are immutable, so space comes back only through compaction, which Dropbox rate-limits and keeps within a cell [B15] |
 | Source | [B3], [B15] |
-| What Satchel simplifies | No garbage collector or trash area. Satchel compacts only when asked, not rate-limited in the background. It has no file-level reference count, so deleting a deduplicated block deletes it for every writer |
+| What Satchel simplifies | No garbage collector or trash area. Satchel compacts only when asked, not rate-limited in the background. The block API itself counts no references, so a delete there removes a deduplicated block for every writer. The files service keeps a reference count per block and deletes only blocks no file uses (DDL-020) |
 | Status / date | Proposed, 2026-10-28 |
 
 ### DDL-014: Satchel is written in Rust

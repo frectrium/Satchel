@@ -50,6 +50,9 @@ fn env_u64(name: &str, default: u64) -> anyhow::Result<u64> {
 pub struct Master {
     config: MasterConfig,
     http: reqwest::Client,
+    /// Held for a whole compaction. A second compaction is refused, and the
+    /// periodic pass waits so it can't close the volume being written.
+    compacting: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Master {
@@ -58,12 +61,19 @@ impl Master {
             .timeout(Duration::from_secs(3))
             .build()
             .expect("HTTP client builds");
-        Self { config, http }
+        Self {
+            config,
+            http,
+            compacting: std::sync::Arc::default(),
+        }
     }
 
     /// One restart-safe reconciliation pass. Call it periodically; no mutable
     /// Master state is retained between calls.
     pub async fn reconcile(&self) -> anyhow::Result<()> {
+        let Ok(_idle) = self.compacting.try_lock() else {
+            return Ok(());
+        };
         let healthy = self.healthy_nodes().await;
         if healthy.is_empty() {
             bail!("no storage nodes are healthy");
@@ -147,6 +157,9 @@ impl Master {
     /// rewrite keeps the old layout until every live block is readable from
     /// its replacement.
     pub async fn compact(&self) -> anyhow::Result<CompactReport> {
+        let Ok(_running) = self.compacting.try_lock() else {
+            bail!("a compaction is already running");
+        };
         let healthy = self.healthy_nodes().await;
         if fragment_placement(&healthy).len() != ec::TOTAL {
             bail!("compaction needs healthy nodes in all three zones");
@@ -176,6 +189,7 @@ impl Master {
             if blocks.is_empty() {
                 self.retire(&volume, &healthy).await?;
                 report.bytes_before += raw_bytes(&volume);
+                report.bytes_reclaimed += raw_bytes(&volume);
                 tracing::info!(volume = volume.id, "compaction retired an empty volume");
                 continue;
             }
@@ -219,8 +233,9 @@ impl Master {
         coded.nodes = fragments;
         coded.generation += 1;
         self.update_volume(&coded).await?;
+        let all = self.read_coded(&coded, healthy).await?;
         for block in blocks {
-            self.read_live_block(&coded, block, healthy).await?;
+            live_slice(&coded, &all, block)?;
         }
         self.delete_layout(volume, healthy).await
     }
@@ -231,33 +246,47 @@ impl Master {
         blocks: &[ListedBlock],
         healthy: &[NodeAddr],
     ) -> anyhow::Result<()> {
+        // A coded source is decoded once, not once per live block.
+        let decoded = match source.kind {
+            VolumeKind::Rs63 => Some(self.read_coded(source, healthy).await?),
+            VolumeKind::Replicated => None,
+        };
         let target = self.create_open(healthy).await?;
-        let mut moved = Vec::with_capacity(blocks.len());
         for block in blocks {
-            let bytes = self.read_live_block(source, block, healthy).await?;
+            let bytes = match &decoded {
+                Some(all) => live_slice(source, all, block)?,
+                None => self.read_live_block(source, block, healthy).await?,
+            };
             let entry = self
                 .append_to_replicas(&target, healthy, block.hash, &bytes)
                 .await?;
             self.move_block(block, &entry).await?;
-            moved.push(ListedBlock {
-                hash: block.hash,
-                entry,
-            });
         }
-        let target = self.get_volume(target.id).await?;
-        let fragments = self.encode(&target, healthy).await?;
-        self.verify_coded(target.id, target.size, &fragments, healthy)
+        // Close the target before encoding it. Uploads can pick any open
+        // volume, and the index refuses new blocks once it is closed
+        // (DDL-019), so the committed size and block list are final here.
+        let mut closed = self.get_volume(target.id).await?;
+        closed.state = VolumeState::Closed;
+        closed.generation += 1;
+        let closed = self.update_volume(&closed).await?;
+        let live = self.blocks(&closed).await?;
+        if live.is_empty() {
+            self.retire(&closed, healthy).await?;
+            return self.retire(source, healthy).await;
+        }
+        let fragments = self.encode(&closed, healthy).await?;
+        self.verify_coded(closed.id, closed.size, &fragments, healthy)
             .await?;
-        let mut coded = target.clone();
-        coded.state = VolumeState::Closed;
+        let mut coded = closed.clone();
         coded.kind = VolumeKind::Rs63;
         coded.nodes = fragments;
         coded.generation += 1;
         let coded = self.update_volume(&coded).await?;
-        for block in &moved {
-            self.read_live_block(&coded, block, healthy).await?;
+        let all = self.read_coded(&coded, healthy).await?;
+        for block in &live {
+            live_slice(&coded, &all, block)?;
         }
-        self.delete_layout(&target, healthy).await?;
+        self.delete_layout(&closed, healthy).await?;
         self.retire(source, healthy).await
     }
 
@@ -311,9 +340,9 @@ impl Master {
                     .await?
                     .to_vec()
             }
-            VolumeKind::Rs63 => self.read_coded(volume, healthy).await?
-                [block.entry.offset as usize..(block.entry.offset + block.entry.length) as usize]
-                .to_vec(),
+            VolumeKind::Rs63 => {
+                return live_slice(volume, &self.read_coded(volume, healthy).await?, block)
+            }
         };
         if BlockHash::of(&bytes) != block.hash {
             bail!(
@@ -397,15 +426,20 @@ impl Master {
         block: &ListedBlock,
         to: &satchel_common::cluster::BlockEntry,
     ) -> anyhow::Result<()> {
-        self.http
+        let response = self
+            .http
             .post(format!(
                 "{}/blocks/{}/move",
                 self.config.index_url, block.hash
             ))
             .json(&serde_json::json!({"from": block.entry, "to": to}))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        // A file deleted during compaction drops its block from the index.
+        // Its copied bytes are then dead space in the new volume.
+        if response.status() != reqwest::StatusCode::NOT_FOUND {
+            response.error_for_status()?;
+        }
         Ok(())
     }
 
@@ -454,16 +488,23 @@ impl Master {
             .map_err(Into::into)
     }
 
+    /// Deletes a volume's replicas or fragments. A missing extent counts as
+    /// deleted: a volume that closed empty was never written to its nodes.
     async fn delete_layout(&self, volume: &Volume, healthy: &[NodeAddr]) -> anyhow::Result<()> {
-        for node in healthy
-            .iter()
-            .filter(|node| volume.nodes.iter().any(|id| id == &node.id))
-        {
-            self.http
-                .delete(format!("{}/extents/{}", node.url, volume.id))
-                .send()
-                .await?
-                .error_for_status()?;
+        for (index, id) in volume.nodes.iter().enumerate() {
+            let Some(node) = healthy.iter().find(|node| &node.id == id) else {
+                continue;
+            };
+            let url = match volume.kind {
+                VolumeKind::Replicated => format!("{}/extents/{}", node.url, volume.id),
+                VolumeKind::Rs63 => {
+                    format!("{}/extents/{}/fragments/{index}", node.url, volume.id)
+                }
+            };
+            let response = self.http.delete(url).send().await?;
+            if response.status() != reqwest::StatusCode::NOT_FOUND {
+                response.error_for_status()?;
+            }
         }
         Ok(())
     }
@@ -535,6 +576,24 @@ fn raw_bytes(volume: &Volume) -> u64 {
         VolumeKind::Replicated => volume.size.saturating_mul(3),
         VolumeKind::Rs63 => volume.size.saturating_mul(3).div_ceil(2),
     }
+}
+
+/// Cuts one live block out of a decoded volume and checks its hash.
+fn live_slice(volume: &Volume, all: &[u8], block: &ListedBlock) -> anyhow::Result<Vec<u8>> {
+    let bytes = block
+        .entry
+        .offset
+        .checked_add(block.entry.length)
+        .and_then(|end| all.get(block.entry.offset as usize..end as usize))
+        .with_context(|| format!("block {} is outside volume {}", block.hash, volume.id))?;
+    if BlockHash::of(bytes) != block.hash {
+        bail!(
+            "volume {} has a corrupt live block {}",
+            volume.id,
+            block.hash
+        );
+    }
+    Ok(bytes.to_vec())
 }
 
 fn compacted_bytes(blocks: &[ListedBlock]) -> u64 {
