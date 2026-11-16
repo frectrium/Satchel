@@ -23,6 +23,7 @@ pub mod manifest;
 pub mod s3;
 pub mod satchel;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -35,13 +36,14 @@ use axum::{
     Json, Router,
 };
 use futures_util::StreamExt;
+use satchel_common::cluster::VolumeKind;
 use satchel_common::BlockHash;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use manifest::{FileRecord, Manifest};
-use satchel::{NodeUsage, SatchelClient};
+use satchel::{Inventory, NodeUsage, SatchelClient};
 
 /// Largest block, 4 MiB (DDL-001).
 pub const BLOCK_BYTES: usize = 4 * 1024 * 1024;
@@ -364,6 +366,19 @@ pub struct Stats {
     /// say how many copies it keeps or where.
     pub raw_bytes: Option<u64>,
     pub nodes: Vec<NodeUsage>,
+    /// Satchel only: actual raw bytes in each zone, split by layout.
+    pub zones: Vec<ZoneUsage>,
+    /// Satchel only: bytes from deleted blocks that the next compaction can
+    /// reclaim. This is physical storage, not logical file size.
+    pub reclaimable_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ZoneUsage {
+    pub zone: String,
+    pub replicated_bytes: u64,
+    pub coded_bytes: u64,
+    pub raw_bytes: u64,
 }
 
 async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
@@ -376,6 +391,10 @@ async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respon
                 Ok(t) => t,
                 Err(e) => return internal(e),
             };
+            let inventory = match client.inventory().await {
+                Ok(inventory) => inventory,
+                Err(e) => return internal(e),
+            };
             let nodes = client.node_usage().await;
             Json(Stats {
                 backend: "satchel",
@@ -386,6 +405,8 @@ async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respon
                 dedup_saved_bytes: Some(totals.logical_bytes.saturating_sub(totals.unique_bytes)),
                 replicas: Some(REPLICAS),
                 raw_bytes: Some(nodes.iter().map(|n| n.bytes).sum()),
+                zones: zone_usage(&nodes),
+                reclaimable_bytes: Some(reclaimable_bytes(&inventory)),
                 nodes,
             })
             .into_response()
@@ -401,6 +422,8 @@ async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respon
                 replicas: None,
                 raw_bytes: None,
                 nodes: Vec::new(),
+                zones: Vec::new(),
+                reclaimable_bytes: None,
             })
             .into_response(),
             Err(e) => internal(e),
@@ -413,13 +436,133 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
         return r;
     }
     let files = match &state.backend {
-        Backend::Satchel { manifest, .. } => manifest.list(),
-        Backend::S3(store) => store.list().await,
+        Backend::Satchel { client, manifest } => {
+            let files = manifest.list_with_blocks();
+            let inventory = client.inventory().await;
+            match (files, inventory) {
+                (Ok(files), Ok(inventory)) => Ok(storage_views(files, &inventory)),
+                (Err(e), _) | (_, Err(e)) => Err(e),
+            }
+        }
+        Backend::S3(store) => store
+            .list()
+            .await
+            .map(|files| files.into_iter().map(ListedFile::s3).collect()),
     };
     match files {
         Ok(files) => Json(files).into_response(),
         Err(e) => internal(e),
     }
+}
+
+/// A file enriched with its current storage layout. S3 files have no layout
+/// because S3 does not disclose its physical copies.
+#[derive(Debug, Clone, Serialize)]
+pub struct ListedFile {
+    #[serde(flatten)]
+    pub file: FileRecord,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage: Option<FileStorage>,
+}
+
+impl ListedFile {
+    fn s3(file: FileRecord) -> Self {
+        Self {
+            file,
+            storage: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileStorage {
+    pub replicated_blocks: u64,
+    pub coded_blocks: u64,
+    /// True only when every block is on an RS(6,3) volume.
+    pub compacted: bool,
+    /// A new replicated block means this file arrived after the last
+    /// compaction that touched its data.
+    pub uploaded_after_compaction: bool,
+}
+
+fn storage_views(
+    files: Vec<(FileRecord, Vec<manifest::BlockRef>)>,
+    inventory: &Inventory,
+) -> Vec<ListedFile> {
+    let kinds: HashMap<u64, VolumeKind> = inventory
+        .volumes
+        .iter()
+        .map(|volume| (volume.id, volume.kind))
+        .collect();
+    let locations: HashMap<String, VolumeKind> = inventory
+        .blocks
+        .iter()
+        .filter_map(|block| {
+            kinds
+                .get(&block.entry.volume)
+                .map(|kind| (block.hash.to_string(), *kind))
+        })
+        .collect();
+    files
+        .into_iter()
+        .map(|(file, blocks)| {
+            let mut replicated = 0;
+            let mut coded = 0;
+            for block in blocks {
+                match locations.get(&block.hash) {
+                    Some(VolumeKind::Rs63) => coded += 1,
+                    Some(VolumeKind::Replicated) | None => replicated += 1,
+                }
+            }
+            ListedFile {
+                file,
+                storage: Some(FileStorage {
+                    replicated_blocks: replicated,
+                    coded_blocks: coded,
+                    compacted: coded > 0 && replicated == 0,
+                    uploaded_after_compaction: replicated > 0,
+                }),
+            }
+        })
+        .collect()
+}
+
+fn zone_usage(nodes: &[NodeUsage]) -> Vec<ZoneUsage> {
+    let mut zones: HashMap<&str, ZoneUsage> = HashMap::new();
+    for node in nodes {
+        let zone = zones.entry(&node.zone).or_insert_with(|| ZoneUsage {
+            zone: node.zone.clone(),
+            replicated_bytes: 0,
+            coded_bytes: 0,
+            raw_bytes: 0,
+        });
+        zone.replicated_bytes += node.replicated_bytes;
+        zone.coded_bytes += node.coded_bytes;
+        zone.raw_bytes += node.bytes;
+    }
+    let mut zones: Vec<_> = zones.into_values().collect();
+    zones.sort_by(|a, b| a.zone.cmp(&b.zone));
+    zones
+}
+
+fn reclaimable_bytes(inventory: &Inventory) -> u64 {
+    let mut live = HashMap::<u64, u64>::new();
+    for block in &inventory.blocks {
+        *live.entry(block.entry.volume).or_default() += block.entry.length;
+    }
+    inventory
+        .volumes
+        .iter()
+        .map(|volume| {
+            let dead = volume
+                .size
+                .saturating_sub(*live.get(&volume.id).unwrap_or(&0));
+            match volume.kind {
+                VolumeKind::Replicated => dead.saturating_mul(u64::from(REPLICAS)),
+                VolumeKind::Rs63 => dead.saturating_mul(3).div_ceil(2),
+            }
+        })
+        .sum()
 }
 
 // ---------- upload ----------

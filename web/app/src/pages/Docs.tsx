@@ -95,13 +95,13 @@ export default function Docs({ sub }: { sub?: string }) {
         <ol>
           <li>The files service looks up the manifest, then asks the block API for each content hash in its original order (DDL-020).</li>
           <li>The Block Index returns the volume, offset and healthy extent locations. For a replicated open volume, the frontend reads one replica and tries another zone if that request fails (DDL-003, DDL-006).</li>
-          <li>For a coded volume, the RS(6,3) read path takes any six of its nine fragments and reconstructs missing data. A whole fragment or one zone can therefore be unavailable (DDL-007). The Compose exercise has nine nodes for that path; the three-node local install stays replicated.</li>
+          <li>For a coded volume, the RS(6,3) read path takes any six of its nine fragments and reconstructs missing data. A whole fragment or one zone can therefore be unavailable (DDL-007). The local install uses three fragment slots on each of its three zone nodes, so it also survives one node loss.</li>
           <li>The files service joins verified blocks into the response. It does not need to understand volume placement or the on-disk extent format.</li>
         </ol>
 
         <h2 id="doc-durability">Replication, then erasure coding</h2>
-        <p>New data is replicated: three full copies, 3x the bytes. When a volume fills (64 MiB) or has been open 10 minutes, the Master closes it and encodes it as Reed-Solomon RS(6,3): 6 data and 3 parity fragments, three per zone, so 1.5x the bytes and any 3 of the 9 can be lost (DDL-004, DDL-007, DDL-008). A six-fragment read can rebuild a missing fragment, which is why a coded volume keeps serving through a zone loss. Magic Pocket also replicates new blocks first and erasure codes them later <C id="B2" /><C id="B5" />.</p>
-        <p className="muted">The local install keeps volumes replicated, since RS(6,3) needs 9 nodes and it runs 3. The cost panel shows both figures.</p>
+        <p>New data is replicated: three full copies, 3x the bytes. When a volume fills (64 MiB) or has been open 10 minutes, the Master closes it but keeps it replicated. Running <code>satchel compact</code> rewrites only the live blocks, validates Reed-Solomon RS(6,3) fragments, commits the new layout and then deletes the old replicas. RS(6,3) has 6 data and 3 parity fragments, three slots per zone, so it uses about 1.5x the bytes and survives any 3 lost fragments (DDL-004, DDL-007, DDL-008, DDL-013).</p>
+        <p className="muted">Deleting a file removes it from My files immediately. Its bytes stay on disk until the next compaction, which is why the page shows space waiting to be reclaimed.</p>
 
         <h2 id="doc-failure">When a node fails</h2>
         <p>Reads try another replica straight away, or reconstruct from six coded fragments. Writes move to another open volume. If a node stays down longer than the repair threshold (15 minutes in Magic Pocket <C id="B2" />, 30 seconds in Satchel's tests), the Master rebuilds its replicas or fragments on healthy nodes after the verifier reports the condition (DDL-010). The verifier's Disk Scrubber reads data back to catch silent corruption, and its Metadata Scanner checks that the index and extents agree (DDL-012) <C id="B3" />.</p>

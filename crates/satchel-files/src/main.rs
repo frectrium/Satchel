@@ -77,15 +77,17 @@ async fn main() -> anyhow::Result<()> {
         Ok("satchel") | Err(_) => {
             let api_url =
                 std::env::var("SATCHEL_API_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
+            let index_url = std::env::var("SATCHEL_INDEX_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:8081".into());
             let nodes = satchel_common::cluster::parse_nodes(
                 &std::env::var("SATCHEL_NODES").unwrap_or_default(),
             )
             .map_err(anyhow::Error::msg)?;
             let dir =
                 PathBuf::from(std::env::var("SATCHEL_DATA_DIR").unwrap_or_else(|_| "/data".into()));
-            tracing::info!(%api_url, nodes = nodes.len(), dir = %dir.display(), "files config: Satchel backend");
+            tracing::info!(%api_url, %index_url, nodes = nodes.len(), dir = %dir.display(), "files config: Satchel backend");
             AppState::new(
-                SatchelClient::new(&api_url, nodes),
+                SatchelClient::new(&api_url, &index_url, nodes),
                 Manifest::open(&dir.join("manifest.db"))?,
                 files_config,
             )

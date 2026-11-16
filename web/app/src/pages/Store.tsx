@@ -145,6 +145,7 @@ function WherePanel({ stats }: { stats: Stats }) {
         <dt>Your data</dt><dd><Counter value={stats.logical_bytes} format={bytes} /></dd>
         <dt>Stored once, after dedup</dt><dd><Counter value={stats.unique_bytes ?? 0} format={bytes} /></dd>
         <dt>Saved by dedup</dt><dd><Counter value={stats.dedup_saved_bytes ?? 0} format={bytes} /></dd>
+        <dt>New uploads</dt><dd>replicated, 3 copies</dd>
         <dt>Raw bytes on disk</dt><dd><Counter value={stats.raw_bytes ?? 0} format={bytes} /></dd>
       </dl>
       <div className="zones">
@@ -160,12 +161,11 @@ function WherePanel({ stats }: { stats: Stats }) {
               </AnimatePresence>
             </div>
             <div className="bar"><motion.div animate={{ width: `${(100 * n.bytes) / max}%` }} /></div>
+            {n.up && <div className="muted small">{bytes(n.coded_bytes)} coded · {bytes(n.replicated_bytes)} replicated</div>}
           </div>
         ))}
       </div>
-      {(stats.raw_bytes ?? 0) > 3 * (stats.unique_bytes ?? 0) && (
-        <p className="muted small" style={{ marginTop: 12 }}>Raw bytes are above 3x because deleted files' blocks stay on disk: Satchel drops the index entry and doesn't compact, like Magic Pocket (DDL-013).</p>
-      )}
+      {(stats.reclaimable_bytes ?? 0) > 0 && <p className="muted small" style={{ marginTop: 12 }}>{bytes(stats.reclaimable_bytes ?? 0)} is waiting for the next <code>satchel compact</code> after deleted files.</p>}
     </Card>
   );
 }
@@ -198,7 +198,7 @@ function CostPanel({ stats }: { stats: Stats }) {
         <div className="price own">
           <div className="label">Own: Satchel on-prem</div>
           <div className="value"><Counter value={cost.satchel.total_usd_month} format={usd} /></div>
-          <div className="detail">per month · {bytes(cost.satchel.raw_bytes)} raw at {cost.satchel.overhead}x (RS(6,3))</div>
+          <div className="detail">fully compacted: {bytes(cost.satchel.raw_bytes)} raw at {cost.satchel.overhead}x. Today: {bytes(stats.raw_bytes ?? 0)} across replicated and coded volumes.</div>
         </div>
       </div>
       <p className="muted small" style={{ marginTop: 10 }}>
