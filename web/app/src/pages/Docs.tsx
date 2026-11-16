@@ -100,7 +100,7 @@ export default function Docs({ sub }: { sub?: string }) {
         </ol>
 
         <h2 id="doc-durability">Replication, then erasure coding</h2>
-        <p>New data is replicated: three full copies, 3x the bytes. When a volume fills (64 MiB) or has been open 10 minutes, the Master closes it but keeps it replicated. Running <code>satchel compact</code> rewrites only the live blocks, validates Reed-Solomon RS(6,3) fragments, commits the new layout and then deletes the old replicas. RS(6,3) has 6 data and 3 parity fragments, three slots per zone, so it uses about 1.5x the bytes and survives any 3 lost fragments (DDL-004, DDL-007, DDL-008, DDL-013).</p>
+        <p>New data is replicated: three full copies, 3x the bytes. When a volume fills (64 MiB) or has been open 10 minutes, the Master closes it but keeps it replicated. Running <code>satchel compact</code> rewrites only the live blocks, validates Reed-Solomon RS(6,3) fragments, commits the new layout and then deletes the old replicas. RS(6,3) has 6 data and 3 parity fragments, three slots per zone, so it uses about 1.5x the bytes and survives any 3 lost fragments (DDL-004, DDL-007, DDL-008, DDL-013). Magic Pocket also replicates new blocks first and erasure codes them later <C id="B2" /><C id="B5" />.</p>
         <p className="muted">Deleting a file removes it from My files immediately. Its bytes stay on disk until the next compaction, which is why the page shows space waiting to be reclaimed.</p>
 
         <h2 id="doc-failure">When a node fails</h2>

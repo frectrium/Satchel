@@ -104,10 +104,16 @@ start() {
 }
 
 compact() {
-    status >/dev/null 2>&1 || die "Satchel isn't running: start it with satchel start"
+    # Only the verifier has to be up. It refuses, and says why, if a zone is down.
+    running verifier && healthy "$VERIFIER_PORT" || die "Satchel isn't running: start it with satchel start"
     say "Compacting closed volumes..."
-    local summary
-    summary=$(curl -fsS --max-time 120 -X POST "http://127.0.0.1:$VERIFIER_PORT/compact")
+    # Big volumes take a while to rewrite and code, so allow up to 30 minutes.
+    local response code summary
+    response=$(curl -sS --max-time 1800 -w '\n%{http_code}' -X POST "http://127.0.0.1:$VERIFIER_PORT/compact") ||
+        die "couldn't reach the verifier on port $VERIFIER_PORT"
+    code=${response##*$'\n'}
+    summary=${response%$'\n'*}
+    [[ "$code" == 200 ]] || die "compaction stopped, nothing was lost: $summary"
     if command -v jq >/dev/null 2>&1; then
         jq -r '"Volumes coded: \(.volumes_coded)\nBytes reclaimed: \(.bytes_reclaimed)\nRaw bytes: \(.bytes_before) -> \(.bytes_after)"' <<<"$summary"
     else

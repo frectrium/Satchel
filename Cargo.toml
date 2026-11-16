@@ -22,6 +22,9 @@ repository = "https://github.com/frectrium/Satchel"
 
 [workspace.dependencies]
 satchel-common = { path = "crates/satchel-common" }
+satchel-api = { path = "crates/satchel-api" }
+satchel-index = { path = "crates/satchel-index" }
+satchel-node = { path = "crates/satchel-node" }
 
 anyhow = "1"
 axum = "0.8"
