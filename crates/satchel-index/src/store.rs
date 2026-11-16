@@ -42,6 +42,16 @@ pub enum PutBlock {
     VolumeNotOpen,
 }
 
+/// Result of moving an indexed block into a newly written open volume.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MoveBlock {
+    Moved(BlockEntry),
+    NotFound,
+    SourceChanged(BlockEntry),
+    NoVolume,
+    VolumeNotOpen,
+}
+
 /// What a volume update did.
 #[derive(Debug, PartialEq, Eq)]
 pub enum UpdateVolume {
@@ -206,6 +216,78 @@ impl Store {
             .conn()
             .execute("DELETE FROM blocks WHERE hash = ?1", [hash.to_string()])?
             > 0)
+    }
+
+    /// Moves one live block after its bytes have been written to a new open
+    /// volume. The expected source makes stale compaction work fail safely.
+    pub fn move_block(
+        &self,
+        hash: &BlockHash,
+        from: &BlockEntry,
+        to: &BlockEntry,
+    ) -> rusqlite::Result<MoveBlock> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let existing: Option<BlockEntry> = tx
+            .query_row(
+                "SELECT volume, offset, length FROM blocks WHERE hash = ?1",
+                [hash.to_string()],
+                |r| {
+                    Ok(BlockEntry {
+                        volume: r.get(0)?,
+                        offset: r.get(1)?,
+                        length: r.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+        let Some(existing) = existing else {
+            return Ok(MoveBlock::NotFound);
+        };
+        if existing != *from {
+            return Ok(MoveBlock::SourceChanged(existing));
+        }
+        let state: Option<String> = tx
+            .query_row(
+                "SELECT state FROM volumes WHERE id = ?1",
+                [to.volume],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match state.as_deref() {
+            None => return Ok(MoveBlock::NoVolume),
+            Some("open") => {}
+            Some(_) => return Ok(MoveBlock::VolumeNotOpen),
+        }
+        tx.execute(
+            "UPDATE blocks SET volume = ?2, offset = ?3, length = ?4 WHERE hash = ?1",
+            params![hash.to_string(), to.volume, to.offset, to.length],
+        )?;
+        tx.execute(
+            "UPDATE volumes SET size = MAX(size, ?2) WHERE id = ?1",
+            params![to.volume, to.offset + to.length],
+        )?;
+        tx.commit()?;
+        Ok(MoveBlock::Moved(*to))
+    }
+
+    /// Retires an empty closed volume after all data has moved elsewhere.
+    pub fn delete_volume(&self, id: u64) -> rusqlite::Result<bool> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let blocks: u64 =
+            tx.query_row("SELECT COUNT(*) FROM blocks WHERE volume = ?1", [id], |r| {
+                r.get(0)
+            })?;
+        if blocks > 0 {
+            return Ok(false);
+        }
+        let removed = tx.execute(
+            "DELETE FROM volumes WHERE id = ?1 AND state = 'closed'",
+            [id],
+        )? > 0;
+        tx.commit()?;
+        Ok(removed)
     }
 
     /// Every entry in a volume, by offset, for the metadata scan (DDL-012).
@@ -390,6 +472,42 @@ mod tests {
         s.put_block(&hash(1), &entry(v.id, 0, 100)).unwrap();
         s.put_block(&hash(2), &entry(v.id, 100, 50)).unwrap();
         assert_eq!(s.get_volume(v.id).unwrap().unwrap().size, 150);
+    }
+
+    #[test]
+    fn moving_a_block_checks_the_source_and_updates_the_new_volume_size() {
+        let s = Store::open_in_memory().unwrap();
+        let source = s.create_volume(&nodes()).unwrap();
+        let target = s.create_volume(&nodes()).unwrap();
+        let from = entry(source.id, 10, 20);
+        let to = entry(target.id, 0, 20);
+        s.put_block(&hash(1), &from).unwrap();
+
+        assert_eq!(
+            s.move_block(&hash(1), &from, &to).unwrap(),
+            MoveBlock::Moved(to)
+        );
+        assert_eq!(s.get_block(&hash(1)).unwrap(), Some(to));
+        assert_eq!(s.get_volume(target.id).unwrap().unwrap().size, 20);
+        assert_eq!(
+            s.move_block(&hash(1), &from, &to).unwrap(),
+            MoveBlock::SourceChanged(to)
+        );
+    }
+
+    #[test]
+    fn only_empty_closed_volumes_can_be_retired() {
+        let s = Store::open_in_memory().unwrap();
+        let volume = s.create_volume(&nodes()).unwrap();
+        assert!(!s.delete_volume(volume.id).unwrap());
+        let closed = Volume {
+            state: VolumeState::Closed,
+            generation: 2,
+            ..volume.clone()
+        };
+        s.update_volume(&closed).unwrap();
+        assert!(s.delete_volume(volume.id).unwrap());
+        assert_eq!(s.get_volume(volume.id).unwrap(), None);
     }
 
     #[test]

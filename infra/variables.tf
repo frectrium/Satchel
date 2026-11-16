@@ -74,17 +74,6 @@ variable "node_volume_gib" {
   default     = 50
 }
 
-variable "encode" {
-  description = "\"on\" lets the Master erasure-code closed volumes (DDL-008). Leave \"off\" until the frontend reads coded volumes (#70)."
-  type        = string
-  default     = "off"
-
-  validation {
-    condition     = contains(["on", "off"], var.encode)
-    error_message = "encode must be \"on\" or \"off\"."
-  }
-}
-
 variable "repair_after" {
   description = "How long a node can be down before repair starts: 15 minutes in Magic Pocket [B2], 30 s for the demo (DDL-010)."
   type        = string

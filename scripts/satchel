@@ -3,7 +3,7 @@
 # the demo. Every service listens on 127.0.0.1 only. The files API on port
 # 47800 is what the website talks to.
 #
-#   satchel start | stop | restart | status | logs [service] | version | uninstall
+#   satchel start | stop | restart | status | compact | logs [service] | version | uninstall
 #
 # Layout under $SATCHEL_HOME (default ~/satchel):
 #   bin/     the binaries and this script
@@ -79,11 +79,11 @@ start() {
     done
     launch api satchel-api "$API_PORT" \
         SATCHEL_INDEX_URL="http://127.0.0.1:$INDEX_PORT" SATCHEL_NODES="$NODES"
-    # The verifier also runs the Master, which opens volumes. Coding stays
-    # off: RS(6,3) needs 9 nodes and this cluster has 3, one per zone.
+    # The verifier also runs the Master, which opens volumes. Coding happens
+    # only when the user runs `satchel compact`.
     launch verifier satchel-verifier "$VERIFIER_PORT" \
         SATCHEL_INDEX_URL="http://127.0.0.1:$INDEX_PORT" SATCHEL_NODES="$NODES" \
-        SATCHEL_ENCODE=off SATCHEL_REPAIR_AFTER="${SATCHEL_REPAIR_AFTER:-15m}" \
+        SATCHEL_REPAIR_AFTER="${SATCHEL_REPAIR_AFTER:-15m}" \
         SATCHEL_VERIFY_EVERY_SECS="${SATCHEL_VERIFY_EVERY_SECS:-60}"
     launch files satchel-files "$FILES_PORT" \
         SATCHEL_API_URL="http://127.0.0.1:$API_PORT" SATCHEL_NODES="$NODES" \
@@ -100,6 +100,24 @@ start() {
     say "  Files API:  http://127.0.0.1:$FILES_PORT/v1/info"
     say "  Data:       $DATA"
     say "  Stop it:    $BIN/satchel stop"
+}
+
+compact() {
+    # Only the verifier has to be up. It refuses, and says why, if a zone is down.
+    running verifier && healthy "$VERIFIER_PORT" || die "Satchel isn't running: start it with satchel start"
+    say "Compacting closed volumes..."
+    # Big volumes take a while to rewrite and code, so allow up to 30 minutes.
+    local response code summary
+    response=$(curl -sS --max-time 1800 -w '\n%{http_code}' -X POST "http://127.0.0.1:$VERIFIER_PORT/compact") ||
+        die "couldn't reach the verifier on port $VERIFIER_PORT"
+    code=${response##*$'\n'}
+    summary=${response%$'\n'*}
+    [[ "$code" == 200 ]] || die "compaction stopped, nothing was lost: $summary"
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '"Volumes coded: \(.volumes_coded)\nBytes reclaimed: \(.bytes_reclaimed)\nRaw bytes: \(.bytes_before) -> \(.bytes_after)"' <<<"$summary"
+    else
+        say "$summary"
+    fi
 }
 
 stop() {
@@ -160,11 +178,12 @@ case "${1:-}" in
     stop) stop ;;
     restart) stop; start ;;
     status) status ;;
+    compact) compact ;;
     logs) tail -n 50 -f "$LOGS/${2:-files}.log" ;;
     version) version ;;
     uninstall) uninstall ;;
     *)
-        say "usage: satchel start | stop | restart | status | logs [service] | version | uninstall"
+        say "usage: satchel start | stop | restart | status | compact | logs [service] | version | uninstall"
         exit 2
         ;;
 esac

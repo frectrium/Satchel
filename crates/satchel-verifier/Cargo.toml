@@ -21,6 +21,11 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true
 
+[dev-dependencies]
+# The compaction tests run the real index, nodes and frontend in process.
+satchel-api.workspace = true
+satchel-index.workspace = true
+satchel-node.workspace = true
 
 [lints]
 workspace = true
