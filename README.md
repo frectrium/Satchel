@@ -211,8 +211,9 @@ Satchel/
 │   ├── SATCHEL_PROJECT.md  # Project brief
 │   └── sources/            # Source Log: every citation, with a stable ID
 ├── observability/          # Prometheus config, Grafana provisioning and dashboards
+├── web/app/                # The Satchel website (React, Vite, TypeScript)
 ├── web/calculator/         # Pricing calculator page and its WASM bundle
-├── scripts/                # install, calculator, integration and release helpers
+├── scripts/                # install.sh, satchel launcher, integration-test.sh, package-release.sh, build-calculator.sh
 ├── .github/                # CI, issue forms, PR template, CODEOWNERS
 ├── Dockerfile              # One image, all binaries
 └── docker-compose.yml      # Local 3-zone dev cluster
@@ -220,7 +221,7 @@ Satchel/
 
 ## Status
 
-**v1.0.0**, the storage system the final report and viva (#29) describe. See [CHANGELOG.md](CHANGELOG.md).
+**v1.1.0**: the storage system (v1.0.0) plus the website, where you can store files on S3 or on your own Satchel and compare the costs. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Done
 
@@ -234,7 +235,6 @@ Satchel/
 
 ### Next
 
-- **v1.1:** the Satchel website: upload to S3 or to a local install, live cost of what's stored, the pricing calculator and a docs section
 - Reads from erasure-coded volumes (#70), horizontal scaling (#73) and the scaling experiment (#75)
 
 ## Roadmap
