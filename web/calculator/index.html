@@ -3,130 +3,74 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Satchel pricing calculator</title>
-  <meta name="description" content="When does owning storage beat renting it? The Satchel cost engine, running in your browser.">
+  <title>Satchel cost story</title>
+  <meta name="description" content="Compare cloud storage with an owned Magic Pocket-style storage system.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <a class="back" href="../index.html">&larr; Back to Satchel</a>
-    <h1>Satchel pricing calculator</h1>
-    <p class="lede">When does owning storage beat renting it? This page runs the same cost engine as
-      <code>satchel-cost</code>, compiled to WebAssembly, so its numbers match the report. Every default
-      price carries its Source Log ID.</p>
-    <nav class="presets" aria-label="Presets">
-      <span>Presets:</span>
-      <button type="button" data-preset="dropbox">Dropbox 2016 base case</button>
-      <button type="button" data-preset="0.1">0.1 PB</button>
-      <button type="button" data-preset="1">1 PB</button>
-      <button type="button" data-preset="10">10 PB</button>
-      <button type="button" data-preset="100">100 PB</button>
-      <button type="button" data-preset="500">500 PB</button>
-      <button type="button" data-preset="lab">Satchel lab cluster</button>
-    </nav>
+  <header class="hero">
+    <a class="back" href="../index.html">← Satchel</a>
+    <span class="eyebrow">Cost story</span>
+    <h1>When does storage make sense to own?</h1>
+    <p>Compare AWS S3 and Azure Blob with a Magic Pocket-style, owned storage system. The same Rust engine powers this page, the report and the command-line model.</p>
   </header>
 
   <main>
-    <form id="inputs" autocomplete="off">
-      <fieldset>
-        <legend>Workload</legend>
-        <label>Starting data
-          <span class="pair">
-            <input type="number" id="start" min="0.001" step="any" required>
-            <select id="start_unit" aria-label="Unit of starting data">
-              <option value="1000000000">GB</option>
-              <option value="1000000000000">TB</option>
-              <option value="1000000000000000" selected>PB</option>
-            </select>
-          </span>
-        </label>
-        <label>Growth per year, %
-          <input type="range" id="growth" min="0" max="100" step="1">
-          <output for="growth" id="growth_out"></output>
-        </label>
-        <label>Horizon, years <input type="number" id="years" min="1" max="15" step="1" required></label>
-        <label>Average block, MB <input type="number" id="block" min="0.01" max="4.194304" step="any" required></label>
-        <label>Egress, multiple of ingest <input type="number" id="egress" min="0" step="any" required></label>
-        <label>Reads on data older than a year, %
-          <input type="range" id="cold_read" min="0" max="100" step="1">
-          <output for="cold_read" id="cold_read_out"></output>
-        </label>
-      </fieldset>
-
-      <fieldset>
-        <legend>Redundancy (on-prem)</legend>
-        <label>Layout
-          <select id="scheme">
-            <option value="magic_pocket">Magic Pocket: 2 regions, RS(6,3), 3.0x</option>
-            <option value="magic_pocket_cold">Magic Pocket cold tier: 2 + 1, 2.25x</option>
-            <option value="satchel">Satchel: 1 region, 3 zones, RS(6,3)</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <div id="custom" hidden>
-          <label>Replicas while open <input type="number" id="replicas" min="1" max="8" step="1"></label>
-          <label>Data fragments, k <input type="number" id="k" min="1" max="32" step="1"></label>
-          <label>Parity fragments, m <input type="number" id="m" min="0" max="16" step="1"></label>
-          <label>Regions with a copy <input type="number" id="regions" min="1" max="4" step="1"></label>
+    <section class="scenario" aria-labelledby="scenario-title">
+      <div class="section-head">
+        <div><span class="eyebrow">Your scenario</span><h2 id="scenario-title">Start with the three things that matter</h2></div>
+        <label class="mode"><input type="checkbox" id="technical_mode"> Technical mode</label>
+      </div>
+      <form id="inputs" autocomplete="off">
+        <div class="basic-fields">
+          <label>Data stored <span class="help" tabindex="0">?<span>Starting logical data. The Dropbox-scale preset is 500 PB [B1]. <a href="../index.html#/docs/cost">How costs work</a></span></span>
+            <span class="pair"><input type="number" id="start" min="0.001" step="any" required><select id="start_unit" aria-label="Data unit"><option value="1000000000">GB</option><option value="1000000000000">TB</option><option value="1000000000000000" selected>PB</option></select></span>
+          </label>
+          <label>Annual growth <span class="help" tabindex="0">?<span>How much the logical data grows each year. It is a scenario input, not a Dropbox forecast (our inference). <a href="../index.html#/docs/cost">How costs work</a></span></span>
+            <span class="range-line"><input type="range" id="growth" min="0" max="100" step="1"><output for="growth" id="growth_out"></output></span>
+          </label>
+          <label>Planning horizon <span class="help" tabindex="0">?<span>Years to include in the comparison. It lets capital costs and cloud bills be compared on the same period (our inference). <a href="../index.html#/docs/cost">How costs work</a></span></span>
+            <input type="number" id="years" min="1" max="15" step="1" required>
+          </label>
         </div>
-        <label>Cloud regions with a full copy
-          <select id="cloud_regions"><option value="1">1</option><option value="2">2</option></select>
-        </label>
-      </fieldset>
 
-      <fieldset>
-        <legend>On-prem costs</legend>
-        <label>Server, USD per raw TB <input type="number" id="server" min="1" step="any" required></label>
-        <label>Hardware life, years <input type="number" id="life" min="1" max="10" step="1" required></label>
-        <label>Cost of capital, % <input type="number" id="wacc" min="0" max="30" step="any" required></label>
-        <label>Engineers <input type="number" id="engineers" min="0" step="any" required></label>
-        <label>Technicians on site, per site <input type="number" id="technicians" min="0" step="any" required></label>
-      </fieldset>
-      <p class="actions">
-        <button type="button" id="reset">Reset to base case</button>
-        <button type="button" id="share">Copy link to this scenario</button>
-        <span id="share_status" role="status"></span>
-      </p>
-    </form>
+        <details class="advanced">
+          <summary>Advanced assumptions <span>storage layout, access and owned-hardware costs</span></summary>
+          <div class="advanced-fields">
+            <label>Average block <span class="help" tabindex="0">?<span>Satchel uses content-addressed blocks up to 4 MiB [B2]. <a href="../index.html#/docs/write">Put and get paths</a></span></span><input type="number" id="block" min="0.01" max="4.194304" step="any" required></label>
+            <label>Egress per byte ingested <span class="help" tabindex="0">?<span>Data read out to the Internet as a multiple of ingest. Provider egress prices come from the pricing model [P1, P5]. <a href="../index.html#/docs/cost">How costs work</a></span></span><input type="number" id="egress" min="0" step="any" required></label>
+            <label>Reads of data older than a year <span class="help" tabindex="0">?<span>Moves a share of data into each provider's cold option. Magic Pocket's cold tier follows observed access patterns [B5]. <a href="../index.html#/docs/durability">Replication and coding</a></span></span><span class="range-line"><input type="range" id="cold_read" min="0" max="100" step="1"><output for="cold_read" id="cold_read_out"></output></span></label>
+            <label>Owned storage layout <span class="help" tabindex="0">?<span>Replication protects new writes; RS(6,3) uses six data and three parity fragments after coding [B2, T8]. <a href="../index.html#/docs/durability">Replication and coding</a></span></span><select id="scheme"><option value="magic_pocket">Magic Pocket: 2 regions, RS(6,3)</option><option value="magic_pocket_cold">Magic Pocket cold tier: 2 + 1</option><option value="satchel">Satchel: 3 zones, RS(6,3)</option><option value="custom">Custom</option></select></label>
+            <div id="custom" class="custom" hidden><label>Open replicas <input type="number" id="replicas" min="1" max="8" step="1"></label><label>Data fragments, k <input type="number" id="k" min="1" max="32" step="1"></label><label>Parity fragments, m <input type="number" id="m" min="0" max="16" step="1"></label><label>Regions <input type="number" id="regions" min="1" max="4" step="1"></label></div>
+            <label>Cloud regions with a copy <span class="help" tabindex="0">?<span>A full second cloud copy doubles stored bytes. The owned model's regional copies are part of its layout [B2]. <a href="../index.html#/docs/durability">Replication and coding</a></span></span><select id="cloud_regions"><option value="1">1</option><option value="2">2</option></select></label>
+            <label>Server price, USD/raw TB <span class="help" tabindex="0">?<span>Cost to buy raw storage hardware. The model documents its price inputs and sources [H2, H3]. <a href="../index.html#/docs/cost">How costs work</a></span></span><input type="number" id="server" min="1" step="any" required></label>
+            <label>Hardware life, years <span class="help" tabindex="0">?<span>Period over which owned hardware is paid off. Five years is consistent with reported server lives [F3, H13]. <a href="../index.html#/docs/cost">How costs work</a></span></span><input type="number" id="life" min="1" max="10" step="1" required></label>
+            <label>Cost of capital <span class="help" tabindex="0">?<span>Discount rate for buying hardware up front. The default is documented in the model [H18]. <a href="../index.html#/docs/cost">How costs work</a></span></span><input type="number" id="wacc" min="0" max="30" step="any" required></label>
+            <label>Storage engineers <span class="help" tabindex="0">?<span>People who operate the storage software. The wage basis is recorded in the model [H16, H15]. <a href="../index.html#/docs/cost">How costs work</a></span></span><input type="number" id="engineers" min="0" step="any" required></label>
+            <label>On-site technicians per site <span class="help" tabindex="0">?<span>People needed at the facilities. The staffing basis is documented in the model [H17, H15]. <a href="../index.html#/docs/cost">How costs work</a></span></span><input type="number" id="technicians" min="0" step="any" required></label>
+          </div>
+        </details>
+        <div class="actions"><button type="button" id="reset">Reset</button><button type="button" id="share">Copy scenario link</button><span id="share_status" role="status"></span></div>
+      </form>
+    </section>
 
     <section id="results" aria-live="polite">
       <p id="error" class="error" role="alert" hidden></p>
-
-      <h2>Total over the horizon</h2>
-      <div id="totals" class="cards"></div>
-      <p id="break_even" class="headline"></p>
-
-      <h2>Cumulative cost</h2>
-      <figure>
-        <svg id="chart" role="img" aria-label="Cumulative cost by provider and year"></svg>
-        <figcaption id="legend" class="legend" aria-label="Click a provider to show or hide its line"></figcaption>
-      </figure>
-
-      <h2>What the workload needs <span class="muted" id="at_year"></span></h2>
-      <div class="counts" id="counts"></div>
-
-      <h2>Where the data sits</h2>
-      <div class="layouts">
-        <div><h3>Cloud</h3><div id="cloud_layout" class="diagram"></div></div>
-        <div><h3>On-prem</h3><div id="onprem_layout" class="diagram"></div></div>
+      <div id="story" class="story">
+        <div class="story-top"><span id="slide_label" class="eyebrow"></span><div class="slide-controls"><button type="button" id="previous" aria-label="Previous result">←</button><button type="button" id="next" aria-label="Next result">→</button></div></div>
+        <div id="slide" class="slide"></div>
+        <div id="dots" class="dots" aria-label="Result slides"></div>
       </div>
-
-      <h2>Sensitivity</h2>
-      <p class="muted">Which inputs move the break-even point the most. Each row changes one input from the scenario above.</p>
-      <button type="button" id="run_sensitivity">Work out sensitivity</button>
-      <div id="sensitivity"></div>
-
-      <details>
-        <summary>Default prices and their sources</summary>
-        <div id="prices"></div>
-      </details>
+      <section id="technical" hidden>
+        <h2>Technical results</h2>
+        <p class="muted">Plain engine outputs for checking against the report and CLI.</p>
+        <div class="table-wrap"><table id="technical_totals"><thead><tr><th>Option</th><th>Total</th><th>Annual costs</th></tr></thead><tbody></tbody></table></div>
+        <h3>End of horizon layout</h3><div id="counts" class="counts"></div>
+        <details><summary>Default prices and sources</summary><div id="prices"></div></details>
+      </section>
     </section>
   </main>
-
-  <footer>
-    <p>Satchel case study. Sources are listed in <code>docs/sources/README.md</code> by ID. Cost method:
-      <code>docs/cost/method.md</code>. Nothing on this page leaves your browser.</p>
-  </footer>
+  <footer>Satchel case study. Defaults cite <code>docs/sources/README.md</code> by Source Log ID. Nothing on this page leaves your browser.</footer>
   <script type="module" src="app.js"></script>
 </body>
 </html>
