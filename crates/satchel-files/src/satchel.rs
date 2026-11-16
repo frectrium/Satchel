@@ -4,13 +4,15 @@
 use std::time::Duration;
 
 use axum::body::Bytes;
-use satchel_common::cluster::NodeAddr;
+use satchel_common::cluster::{BlockEntry, NodeAddr, Volume};
+use satchel_common::BlockHash;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct SatchelClient {
     http: reqwest::Client,
     api_url: String,
+    index_url: String,
     nodes: Vec<NodeAddr>,
 }
 
@@ -21,22 +23,40 @@ pub struct NodeUsage {
     pub zone: String,
     pub up: bool,
     pub bytes: u64,
+    pub replicated_bytes: u64,
+    pub coded_bytes: u64,
     pub extents: u64,
 }
 
 #[derive(Deserialize)]
 struct Extent {
+    kind: String,
     size: u64,
 }
 
+/// All block locations and volume layouts from one index request.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Inventory {
+    pub volumes: Vec<Volume>,
+    pub blocks: Vec<LocatedBlock>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LocatedBlock {
+    pub hash: BlockHash,
+    #[serde(flatten)]
+    pub entry: BlockEntry,
+}
+
 impl SatchelClient {
-    pub fn new(api_url: &str, nodes: Vec<NodeAddr>) -> Self {
+    pub fn new(api_url: &str, index_url: &str, nodes: Vec<NodeAddr>) -> Self {
         Self {
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
                 .expect("HTTP client builds"),
             api_url: api_url.trim_end_matches('/').to_owned(),
+            index_url: index_url.trim_end_matches('/').to_owned(),
             nodes,
         }
     }
@@ -90,6 +110,18 @@ impl SatchelClient {
         Ok(r.bytes().await?)
     }
 
+    /// Reads the storage inventory in one request, avoiding a lookup for each
+    /// file block when the website explains the current layout.
+    pub async fn inventory(&self) -> anyhow::Result<Inventory> {
+        let response = self
+            .http
+            .get(format!("{}/inventory", self.index_url))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(response.json().await?)
+    }
+
     /// Drops a block's index entry. The bytes stay on disk (DDL-013).
     pub async fn delete_block(&self, hash: &str) -> anyhow::Result<()> {
         let r = self
@@ -125,6 +157,16 @@ impl SatchelClient {
                     zone: node.zone.clone(),
                     up: true,
                     bytes: extents.iter().map(|e| e.size).sum(),
+                    replicated_bytes: extents
+                        .iter()
+                        .filter(|e| e.kind == "replica")
+                        .map(|e| e.size)
+                        .sum(),
+                    coded_bytes: extents
+                        .iter()
+                        .filter(|e| e.kind == "fragment")
+                        .map(|e| e.size)
+                        .sum(),
                     extents: extents.len() as u64,
                 },
                 None => NodeUsage {
@@ -132,6 +174,8 @@ impl SatchelClient {
                     zone: node.zone.clone(),
                     up: false,
                     bytes: 0,
+                    replicated_bytes: 0,
+                    coded_bytes: 0,
                     extents: 0,
                 },
             });

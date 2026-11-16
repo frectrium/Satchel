@@ -321,6 +321,37 @@ impl Store {
         .collect()
     }
 
+    /// Every block entry, for services that need a single consistent storage
+    /// inventory instead of a request per block.
+    pub fn blocks(&self) -> rusqlite::Result<Vec<(BlockHash, BlockEntry)>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT hash, volume, offset, length FROM blocks ORDER BY volume, offset")?;
+        let rows = stmt.query_map([], |r| {
+            let hash: String = r.get(0)?;
+            Ok((
+                hash,
+                BlockEntry {
+                    volume: r.get(1)?,
+                    offset: r.get(2)?,
+                    length: r.get(3)?,
+                },
+            ))
+        })?;
+        rows.map(|row| {
+            let (hash, entry) = row?;
+            let hash = hash.parse().map_err(|_| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    "bad hash".into(),
+                )
+            })?;
+            Ok((hash, entry))
+        })
+        .collect()
+    }
+
     /// Opens a new replicated volume on `nodes`, generation 1.
     pub fn create_volume(&self, nodes: &[String]) -> rusqlite::Result<Volume> {
         let conn = self.conn();

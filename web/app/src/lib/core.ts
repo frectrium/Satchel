@@ -14,8 +14,11 @@ export const CONFIG: Config = {
 
 export type Target = "aws" | "local";
 
-export type FileRecord = { id: number; name: string; size: number; sha256: string; created_at: number; blocks: number };
-export type NodeUsage = { id: string; zone: string; up: boolean; bytes: number; extents: number };
+export type FileStorage = { replicated_blocks: number; coded_blocks: number; compacted: boolean; uploaded_after_compaction: boolean };
+export type FileRecord = { id: number; name: string; size: number; sha256: string; created_at: number; blocks: number; storage?: FileStorage };
+// Installs older than v2.0.0 send neither the per-layout bytes nor zones.
+export type NodeUsage = { id: string; zone: string; up: boolean; bytes: number; replicated_bytes?: number; coded_bytes?: number; extents: number };
+export type ZoneUsage = { zone: string; replicated_bytes: number; coded_bytes: number; raw_bytes: number };
 export type Stats = {
   backend: "satchel" | "s3";
   files: number;
@@ -26,6 +29,8 @@ export type Stats = {
   replicas: number | null;
   raw_bytes: number | null;
   nodes: NodeUsage[];
+  zones?: ZoneUsage[];
+  reclaimable_bytes?: number | null;
 };
 export type Info = { backend: string; login_required: boolean; max_file_bytes: number | null; max_total_bytes: number | null };
 export type SatchelReport = {

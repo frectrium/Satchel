@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use reqwest::StatusCode;
 use satchel_common::cluster::{BlockEntry, Volume, VolumeKind, VolumeState};
 use satchel_common::BlockHash;
-use satchel_index::{router, ListedBlock, Store};
+use satchel_index::{router, Inventory, ListedBlock, Store};
 use serde_json::json;
 
 async fn serve(store: Store) -> (String, tokio::task::JoinHandle<()>) {
@@ -319,6 +319,31 @@ async fn lists_for_the_master_and_the_metadata_scan() {
     assert_eq!(listed[0].hash.to_string(), hash(1));
     let missing = c.get(format!("{url}/blocks")).send().await.unwrap();
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn inventory_returns_blocks_and_volume_layouts_together() {
+    let (c, url) = (reqwest::Client::new(), index().await);
+    let volume = open_volume(&c, &url).await;
+    let entry = BlockEntry {
+        volume: volume.id,
+        offset: 0,
+        length: 12,
+    };
+    put(&c, &url, &hash(1), entry).await;
+    let inventory: Inventory = c
+        .get(format!("{url}/inventory"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(inventory.volumes.len(), 1);
+    assert_eq!(inventory.volumes[0].id, volume.id);
+    assert_eq!(inventory.volumes[0].size, entry.length);
+    assert_eq!(inventory.blocks.len(), 1);
+    assert_eq!(inventory.blocks[0].entry, entry);
 }
 
 #[tokio::test]

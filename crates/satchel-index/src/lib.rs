@@ -31,6 +31,14 @@ pub struct ListedBlock {
     pub entry: BlockEntry,
 }
 
+/// One read of the Block Index and Replication Table, for the files service's
+/// storage-state view. It avoids a lookup for each file block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Inventory {
+    pub volumes: Vec<Volume>,
+    pub blocks: Vec<ListedBlock>,
+}
+
 #[derive(Deserialize)]
 struct NewVolume {
     nodes: Vec<String>,
@@ -59,6 +67,7 @@ pub fn router(store: Store) -> Router {
         )
         .route("/blocks/{hash}/move", axum::routing::post(move_block))
         .route("/blocks", get(list_blocks))
+        .route("/inventory", get(inventory))
         .route("/volumes", get(list_volumes).post(create_volume))
         .route(
             "/volumes/{id}",
@@ -179,6 +188,22 @@ async fn list_blocks(
         )
         .into_response(),
         Err(e) => internal(e),
+    }
+}
+
+async fn inventory(State(s): State<AppState>) -> Response {
+    let volumes = blocking(&s, |st| st.volumes(None)).await;
+    let blocks = blocking(&s, |st| st.blocks()).await;
+    match (volumes, blocks) {
+        (Ok(volumes), Ok(blocks)) => Json(Inventory {
+            volumes,
+            blocks: blocks
+                .into_iter()
+                .map(|(hash, entry)| ListedBlock { hash, entry })
+                .collect(),
+        })
+        .into_response(),
+        (Err(error), _) | (_, Err(error)) => internal(error),
     }
 }
 

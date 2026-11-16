@@ -155,6 +155,37 @@ impl Manifest {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// Every file with its ordered blocks. The files page needs this once to
+    /// annotate each file from one Block Index inventory request.
+    pub fn list_with_blocks(&self) -> anyhow::Result<Vec<(FileRecord, Vec<BlockRef>)>> {
+        let files = self.list()?;
+        let conn = self.conn();
+        let mut stmt =
+            conn.prepare("SELECT file_id, idx, hash, size FROM file_blocks ORDER BY file_id, idx")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                BlockRef {
+                    index: row.get::<_, i64>(1)? as u64,
+                    hash: row.get(2)?,
+                    size: row.get::<_, i64>(3)? as u64,
+                },
+            ))
+        })?;
+        let mut blocks = std::collections::HashMap::<i64, Vec<BlockRef>>::new();
+        for row in rows {
+            let (file, block) = row?;
+            blocks.entry(file).or_default().push(block);
+        }
+        Ok(files
+            .into_iter()
+            .map(|file| {
+                let rows = blocks.remove(&file.id).unwrap_or_default();
+                (file, rows)
+            })
+            .collect())
+    }
+
     /// A file and its blocks in order.
     pub fn get(&self, id: i64) -> anyhow::Result<Option<(FileRecord, Vec<BlockRef>)>> {
         let conn = self.conn();

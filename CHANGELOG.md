@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.0.0, 2026-11-17
+
+Compaction and coded reads: volumes stay replicated until `satchel compact` reclaims deleted space and codes them as RS(6,3), and every read works from either layout.
+
+### Storage
+- **`satchel compact`**: closes written volumes, rewrites live blocks around deleted ones, encodes RS(6,3), checks every live block in the new layout and only then deletes the old one. It refuses to run without healthy nodes in all three zones, and only one runs at a time (DDL-008, 013)
+- **Coded reads**: blocks on RS(6,3) volumes are read from the data fragments that hold them, and rebuilt from any six fragments when some are missing (DDL-007)
+- **Three fragment slots per zone** also on a one-node-per-zone install, so the local install codes too and survives losing one node (DDL-007)
+- Coding no longer starts on its own when a volume closes; the `encode` Terraform variable and `SATCHEL_ENCODE` are gone
+
+### Website
+- **My files** groups files into compacted and not yet compacted, shows each file's coded and replicated blocks, the disk used in each zone by layout, and the space the next compaction will reclaim
+- **Calculator redesign**: clouds against a Magic Pocket-style owned system, basic and advanced inputs with sourced help, scale comparisons, result slides and a technical mode. Satchel on EC2 is no longer shown
+- **How it works** covers blocks and extents, the read path, coding at compaction and deletes
+
 ## v1.1.0, 2026-11-16
 
 The Satchel website: store files on AWS S3 (rent) or on Satchel running on your own computer (own), and see what each does with them and what it costs.

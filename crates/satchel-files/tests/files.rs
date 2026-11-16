@@ -1,7 +1,7 @@
 //! The files API against a fake Satchel frontend and storage node.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -23,6 +23,9 @@ struct Fake {
     /// Puts that answer 503 first, like the moment a volume closes.
     fail_next_puts: AtomicU32,
     puts: AtomicU32,
+    coded: AtomicBool,
+    /// The Block Index answers 503, as while it restarts.
+    index_down: AtomicBool,
 }
 
 async fn fake_put(State(f): State<Arc<Fake>>, Path(hash): Path<String>, body: Bytes) -> StatusCode {
@@ -68,7 +71,43 @@ async fn fake_delete(State(f): State<Arc<Fake>>, Path(hash): Path<String>) -> St
 
 async fn fake_extents(State(f): State<Arc<Fake>>) -> Json<Value> {
     let bytes: usize = f.blocks.lock().unwrap().values().map(|b| b.len()).sum();
-    Json(serde_json::json!([{"volume": 1, "kind": "replica", "index": null, "size": bytes}]))
+    let kind = if f.coded.load(Ordering::SeqCst) {
+        "fragment"
+    } else {
+        "replica"
+    };
+    Json(serde_json::json!([{"volume": 1, "kind": kind, "index": null, "size": bytes}]))
+}
+
+async fn fake_inventory(State(f): State<Arc<Fake>>) -> Result<Json<Value>, StatusCode> {
+    if f.index_down.load(Ordering::SeqCst) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let kind = if f.coded.load(Ordering::SeqCst) {
+        "rs63"
+    } else {
+        "replicated"
+    };
+    let blocks = f.blocks.lock().unwrap();
+    let mut offset = 0;
+    let entries: Vec<_> = blocks
+        .iter()
+        .map(|(hash, bytes)| {
+            let entry = serde_json::json!({
+                "hash": hash,
+                "volume": 1,
+                "offset": offset,
+                "length": bytes.len(),
+            });
+            offset += bytes.len();
+            entry
+        })
+        .collect();
+    Ok(Json(serde_json::json!({
+        "volumes": [{"id": 1, "state": "closed", "kind": kind, "generation": 1,
+            "opened_at_secs": 0, "nodes": ["node-z1-1"], "size": offset}],
+        "blocks": entries,
+    })))
 }
 
 async fn serve(app: Router) -> String {
@@ -93,6 +132,7 @@ async fn harness(limits: Limits) -> Harness {
                 put(fake_put).get(fake_get).delete(fake_delete),
             )
             .route("/extents", get(fake_extents))
+            .route("/inventory", get(fake_inventory))
             .layer(axum::extract::DefaultBodyLimit::max(2 * BLOCK_BYTES))
             .with_state(fake.clone()),
     )
@@ -103,7 +143,7 @@ async fn harness(limits: Limits) -> Harness {
         url: satchel.clone(),
     }];
     let state = AppState::new(
-        SatchelClient::new(&satchel, nodes),
+        SatchelClient::new(&satchel, &satchel, nodes),
         Manifest::open_in_memory().unwrap(),
         Config {
             allowed_origins: vec!["https://satchel.example".into()],
@@ -181,6 +221,42 @@ async fn a_file_round_trips_through_blocks() {
         .map(|b| b["size"].as_u64().unwrap())
         .collect();
     assert_eq!(sizes, [BLOCK_BYTES as u64, BLOCK_BYTES as u64, 12_345]);
+}
+
+#[tokio::test]
+async fn files_and_stats_show_replicated_then_coded_storage() {
+    let h = harness(Limits::default()).await;
+    let (status, _) = h
+        .upload("notes.txt", b"compaction changes this layout")
+        .await;
+    assert_eq!(status, 201);
+
+    let before = h.get_json("/v1/files").await;
+    assert_eq!(before[0]["storage"]["replicated_blocks"], 1);
+    assert_eq!(before[0]["storage"]["coded_blocks"], 0);
+    assert_eq!(before[0]["storage"]["compacted"], false);
+
+    h.fake.coded.store(true, Ordering::SeqCst);
+    let after = h.get_json("/v1/files").await;
+    assert_eq!(after[0]["storage"]["replicated_blocks"], 0);
+    assert_eq!(after[0]["storage"]["coded_blocks"], 1);
+    assert_eq!(after[0]["storage"]["compacted"], true);
+    let stats = h.get_json("/v1/stats").await;
+    assert!(stats["zones"][0]["coded_bytes"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn files_are_still_listed_while_the_index_is_unreachable() {
+    let h = harness(Limits::default()).await;
+    assert_eq!(h.upload("kept.txt", b"still listed").await.0, 201);
+    h.fake.index_down.store(true, Ordering::SeqCst);
+
+    let files = h.get_json("/v1/files").await;
+    assert_eq!(files[0]["name"], "kept.txt");
+    assert!(files[0].get("storage").is_none(), "{files}");
+    let stats = h.get_json("/v1/stats").await;
+    assert_eq!(stats["files"], 1);
+    assert!(stats["reclaimable_bytes"].is_null(), "{stats}");
 }
 
 #[tokio::test]
