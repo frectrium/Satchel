@@ -98,7 +98,7 @@ function FilesState({ target, files, stats, onDelete }: { target: Target; files:
     { title: "Not yet compacted", note: "3 replicated copies, one in each zone", files: files.filter((f) => !f.storage?.compacted) },
   ] : [{ title: "S3 objects", note: "One object per file", files }];
   return <>
-    {target === "local" && stats && <Card style={{ marginBottom: 18 }}>
+    {target === "local" && (stats?.zones?.length ?? 0) > 0 && stats && <Card style={{ marginBottom: 18 }}>
       <h2>Disk across your zones</h2>
       <div className="zones">{(stats.zones ?? []).map((zone) => <div key={zone.zone} className="zone node">
         <div className="zone-head"><span>Zone {zone.zone}</span><span>{zoneDown(stats, zone.zone) ? "node down" : bytes(zone.raw_bytes)}</span></div>
