@@ -25,6 +25,7 @@ use axum::{
     Router,
 };
 use satchel_common::cluster::{BlockEntry, NodeAddr, Volume, VolumeKind};
+use satchel_common::ec;
 use satchel_common::BlockHash;
 
 use clients::{http_client, CallError, IndexClient, NodeClient};
@@ -280,11 +281,10 @@ async fn get_block(State(state): State<Arc<AppState>>, Path(raw): Path<String>) 
         Err(e) => return unavailable(e),
     };
     if volume.kind == VolumeKind::Rs63 {
-        // Coded reads arrive with the erasure coding work (#70).
-        return error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "reads from coded volumes are not supported yet",
-        );
+        return match read_coded(&state, &volume, entry, &hash).await {
+            Ok(bytes) => (StatusCode::OK, bytes).into_response(),
+            Err(why) => error(StatusCode::SERVICE_UNAVAILABLE, why),
+        };
     }
 
     // Own zone first, then the others in placement order.
@@ -313,6 +313,91 @@ async fn get_block(State(state): State<Arc<AppState>>, Path(raw): Path<String>) 
         StatusCode::SERVICE_UNAVAILABLE,
         format!("no replica could serve the block: {}", failures.join("; ")),
     )
+}
+
+/// Reads a coded block directly from its data fragment. If a fragment is
+/// unavailable, rebuild the volume from any six complete fragments and slice
+/// the requested bytes from that result (DDL-007).
+async fn read_coded(
+    state: &AppState,
+    volume: &Volume,
+    entry: BlockEntry,
+    hash: &BlockHash,
+) -> Result<Bytes, String> {
+    if volume.nodes.len() != ec::TOTAL {
+        return Err(format!(
+            "coded volume {} has {} placements, need {}",
+            volume.id,
+            volume.nodes.len(),
+            ec::TOTAL
+        ));
+    }
+    let nodes: Vec<&NodeAddr> = volume
+        .nodes
+        .iter()
+        .map(|id| {
+            state
+                .config
+                .nodes
+                .iter()
+                .find(|node| &node.id == id)
+                .ok_or_else(|| format!("coded volume {} uses unknown node {id}", volume.id))
+        })
+        .collect::<Result<_, _>>()?;
+    let spans = ec::locate(entry.offset, entry.length, volume.size).map_err(|e| e.to_string())?;
+    let mut direct = Vec::with_capacity(entry.length as usize);
+    for span in &spans {
+        match state
+            .nodes
+            .read_fragment(
+                nodes[span.fragment],
+                volume.id,
+                span.fragment,
+                Some((span.offset, span.length)),
+            )
+            .await
+        {
+            Ok(bytes) => direct.extend_from_slice(&bytes),
+            Err(_) => return read_coded_degraded(state, volume, entry, hash, &nodes).await,
+        }
+    }
+    if hash.verify(&direct) {
+        return Ok(Bytes::from(direct));
+    }
+    read_coded_degraded(state, volume, entry, hash, &nodes).await
+}
+
+async fn read_coded_degraded(
+    state: &AppState,
+    volume: &Volume,
+    entry: BlockEntry,
+    hash: &BlockHash,
+    nodes: &[&NodeAddr],
+) -> Result<Bytes, String> {
+    let mut fragments = Vec::with_capacity(ec::TOTAL);
+    for (index, node) in nodes.iter().enumerate() {
+        fragments.push(
+            state
+                .nodes
+                .read_fragment(node, volume.id, index, None)
+                .await
+                .ok()
+                .map(|b| b.to_vec()),
+        );
+    }
+    let all = ec::decode(&mut fragments, volume.size)
+        .map_err(|e| format!("coded volume {} cannot rebuild: {e}", volume.id))?;
+    let end = entry
+        .offset
+        .checked_add(entry.length)
+        .ok_or("block range overflows")? as usize;
+    let bytes = all
+        .get(entry.offset as usize..end)
+        .ok_or("block range is outside coded volume")?;
+    if !hash.verify(bytes) {
+        return Err("rebuilt bytes fail the block hash".to_owned());
+    }
+    Ok(Bytes::copy_from_slice(bytes))
 }
 
 async fn delete_block(State(state): State<Arc<AppState>>, Path(raw): Path<String>) -> Response {

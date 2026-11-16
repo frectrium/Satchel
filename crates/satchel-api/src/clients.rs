@@ -182,4 +182,25 @@ impl NodeClient {
         }
         response.bytes().await.map_err(failed(&what))
     }
+
+    /// Reads all or part of one RS(6,3) fragment. The node verifies the
+    /// fragment checksum before it serves a range.
+    pub async fn read_fragment(
+        &self,
+        node: &NodeAddr,
+        volume: u64,
+        fragment: usize,
+        range: Option<(u64, u64)>,
+    ) -> Result<axum::body::Bytes, CallError> {
+        let what = format!("read fragment {fragment} from {}", node.id);
+        let mut url = format!("{}/extents/{volume}/fragments/{fragment}", node.url);
+        if let Some((offset, length)) = range {
+            url.push_str(&format!("?offset={offset}&length={length}"));
+        }
+        let response = self.client.get(url).send().await.map_err(failed(&what))?;
+        if !response.status().is_success() {
+            return Err(CallError::from_status(&what, response.status()));
+        }
+        response.bytes().await.map_err(failed(&what))
+    }
 }
