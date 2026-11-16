@@ -100,8 +100,8 @@ function FilesState({ target, files, stats, onDelete }: { target: Target; files:
   return <>
     {target === "local" && stats && <Card style={{ marginBottom: 18 }}>
       <h2>Disk across your zones</h2>
-      <div className="zones">{stats.zones.map((zone) => <div key={zone.zone} className="zone node">
-        <div className="zone-head"><span>Zone {zone.zone}</span><span>{bytes(zone.raw_bytes)}</span></div>
+      <div className="zones">{(stats.zones ?? []).map((zone) => <div key={zone.zone} className="zone node">
+        <div className="zone-head"><span>Zone {zone.zone}</span><span>{zoneDown(stats, zone.zone) ? "node down" : bytes(zone.raw_bytes)}</span></div>
         <div className="bar"><motion.div animate={{ width: `${zone.raw_bytes ? 100 * zone.coded_bytes / zone.raw_bytes : 0}%` }} /></div>
         <div className="muted small">{bytes(zone.coded_bytes)} coded · {bytes(zone.replicated_bytes)} replicated</div>
       </div>)}</div>
@@ -112,6 +112,12 @@ function FilesState({ target, files, stats, onDelete }: { target: Target; files:
       <div className="file-list"><AnimatePresence initial={false}>{group.files.map((f, i) => <FileRow key={f.id} f={f} i={i} target={target} onDelete={onDelete} />)}</AnimatePresence></div>
     </section>)}
   </>;
+}
+
+/** True when every node in the zone is unreachable, so its bytes can't be counted. */
+function zoneDown(stats: Stats, zone: string) {
+  const nodes = stats.nodes.filter((n) => n.zone === zone);
+  return nodes.length > 0 && nodes.every((n) => !n.up);
 }
 
 function FileRow({ f, i, target, onDelete }: { f: FileRecord; i: number; target: Target; onDelete: (file: FileRecord) => void }) {

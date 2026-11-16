@@ -391,10 +391,7 @@ async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respon
                 Ok(t) => t,
                 Err(e) => return internal(e),
             };
-            let inventory = match client.inventory().await {
-                Ok(inventory) => inventory,
-                Err(e) => return internal(e),
-            };
+            let inventory = client.inventory().await.ok();
             let nodes = client.node_usage().await;
             Json(Stats {
                 backend: "satchel",
@@ -406,7 +403,7 @@ async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respon
                 replicas: Some(REPLICAS),
                 raw_bytes: Some(nodes.iter().map(|n| n.bytes).sum()),
                 zones: zone_usage(&nodes),
-                reclaimable_bytes: Some(reclaimable_bytes(&inventory)),
+                reclaimable_bytes: inventory.as_ref().map(reclaimable_bytes),
                 nodes,
             })
             .into_response()
@@ -436,18 +433,25 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
         return r;
     }
     let files = match &state.backend {
-        Backend::Satchel { client, manifest } => {
-            let files = manifest.list_with_blocks();
-            let inventory = client.inventory().await;
-            match (files, inventory) {
-                (Ok(files), Ok(inventory)) => Ok(storage_views(files, &inventory)),
-                (Err(e), _) | (_, Err(e)) => Err(e),
-            }
-        }
+        Backend::Satchel { client, manifest } => match manifest.list_with_blocks() {
+            // The layout needs the Block Index. If it is briefly unreachable,
+            // still list the files, just without their layout.
+            Ok(files) => match client.inventory().await {
+                Ok(inventory) => Ok(storage_views(files, &inventory)),
+                Err(e) => {
+                    tracing::warn!("listing files without their layout: {e}");
+                    Ok(files
+                        .into_iter()
+                        .map(|(file, _)| ListedFile::without_layout(file))
+                        .collect())
+                }
+            },
+            Err(e) => Err(e),
+        },
         Backend::S3(store) => store
             .list()
             .await
-            .map(|files| files.into_iter().map(ListedFile::s3).collect()),
+            .map(|files| files.into_iter().map(ListedFile::without_layout).collect()),
     };
     match files {
         Ok(files) => Json(files).into_response(),
@@ -466,7 +470,7 @@ pub struct ListedFile {
 }
 
 impl ListedFile {
-    fn s3(file: FileRecord) -> Self {
+    fn without_layout(file: FileRecord) -> Self {
         Self {
             file,
             storage: None,

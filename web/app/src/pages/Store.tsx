@@ -161,7 +161,7 @@ function WherePanel({ stats }: { stats: Stats }) {
               </AnimatePresence>
             </div>
             <div className="bar"><motion.div animate={{ width: `${(100 * n.bytes) / max}%` }} /></div>
-            {n.up && <div className="muted small">{bytes(n.coded_bytes)} coded · {bytes(n.replicated_bytes)} replicated</div>}
+            {n.up && n.coded_bytes !== undefined && <div className="muted small">{bytes(n.coded_bytes)} coded · {bytes(n.replicated_bytes)} replicated</div>}
           </div>
         ))}
       </div>

@@ -221,11 +221,12 @@ Satchel/
 
 ## Status
 
-**v1.1.0**: the storage system (v1.0.0) plus the website, where you can store files on S3 or on your own Satchel and compare the costs. See [CHANGELOG.md](CHANGELOG.md).
+**v2.0.0**: the storage system and website of v1.1.0, plus compaction (`satchel compact`) that reclaims deleted space and erasure codes volumes, reads from coded volumes, a storage view in My files and the redesigned calculator. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Done
 
 - Storage path: frontend, Block Index and Replication Table on SQLite, storage nodes with fsync'd extents, Master with zone-aware volumes, RS(6,3) codec, verifier with the Disk Scrubber, Metadata Scanner and repair
+- Compaction and coding on demand (`satchel compact`), and reads from coded volumes, including with fragments missing
 - Files on top of blocks: `satchel-files` with a manifest of block lists (DDL-020) and a one-command local install
 - Prometheus metrics and a Grafana dashboard for every service
 - Cost model: sizing, the `satchel-cost` engine and CLI, AWS, Azure and on-prem estimates and the break-even point
@@ -235,7 +236,7 @@ Satchel/
 
 ### Next
 
-- Reads from erasure-coded volumes (#70), horizontal scaling (#73) and the scaling experiment (#75)
+- Horizontal scaling (#73), the scaling experiment (#75) and an architecture change measured before and after (#106)
 
 ## Roadmap
 

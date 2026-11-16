@@ -24,6 +24,8 @@ struct Fake {
     fail_next_puts: AtomicU32,
     puts: AtomicU32,
     coded: AtomicBool,
+    /// The Block Index answers 503, as while it restarts.
+    index_down: AtomicBool,
 }
 
 async fn fake_put(State(f): State<Arc<Fake>>, Path(hash): Path<String>, body: Bytes) -> StatusCode {
@@ -77,7 +79,10 @@ async fn fake_extents(State(f): State<Arc<Fake>>) -> Json<Value> {
     Json(serde_json::json!([{"volume": 1, "kind": kind, "index": null, "size": bytes}]))
 }
 
-async fn fake_inventory(State(f): State<Arc<Fake>>) -> Json<Value> {
+async fn fake_inventory(State(f): State<Arc<Fake>>) -> Result<Json<Value>, StatusCode> {
+    if f.index_down.load(Ordering::SeqCst) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
     let kind = if f.coded.load(Ordering::SeqCst) {
         "rs63"
     } else {
@@ -98,11 +103,11 @@ async fn fake_inventory(State(f): State<Arc<Fake>>) -> Json<Value> {
             entry
         })
         .collect();
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "volumes": [{"id": 1, "state": "closed", "kind": kind, "generation": 1,
             "opened_at_secs": 0, "nodes": ["node-z1-1"], "size": offset}],
         "blocks": entries,
-    }))
+    })))
 }
 
 async fn serve(app: Router) -> String {
@@ -238,6 +243,20 @@ async fn files_and_stats_show_replicated_then_coded_storage() {
     assert_eq!(after[0]["storage"]["compacted"], true);
     let stats = h.get_json("/v1/stats").await;
     assert!(stats["zones"][0]["coded_bytes"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn files_are_still_listed_while_the_index_is_unreachable() {
+    let h = harness(Limits::default()).await;
+    assert_eq!(h.upload("kept.txt", b"still listed").await.0, 201);
+    h.fake.index_down.store(true, Ordering::SeqCst);
+
+    let files = h.get_json("/v1/files").await;
+    assert_eq!(files[0]["name"], "kept.txt");
+    assert!(files[0].get("storage").is_none(), "{files}");
+    let stats = h.get_json("/v1/stats").await;
+    assert_eq!(stats["files"], 1);
+    assert!(stats["reclaimable_bytes"].is_null(), "{stats}");
 }
 
 #[tokio::test]

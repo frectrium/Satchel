@@ -169,8 +169,9 @@ API=$(terraform output -raw api_url)
 curl "$API/health"
 ```
 
-`encode` stays `off` until the frontend reads coded volumes (#70). Pass
-`-var encode=on` after that.
+Volumes stay replicated until someone compacts them. To code closed volumes
+as RS(6,3), call `curl -X POST http://<control>:8085/compact` from inside the
+VPC (DDL-008).
 
 ## Demo flow
 
