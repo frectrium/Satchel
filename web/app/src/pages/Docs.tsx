@@ -4,7 +4,9 @@ import { installCommand } from "../lib/core";
 const SECTIONS: [string, string][] = [
   ["why", "Why Dropbox left S3"],
   ["architecture", "Architecture"],
+  ["blocks", "Blocks and extents"],
   ["write", "Writing a file"],
+  ["read", "Reading a file"],
   ["durability", "Replication and coding"],
   ["failure", "When a node fails"],
   ["files", "Files on top of blocks"],
@@ -76,6 +78,10 @@ export default function Docs({ sub }: { sub?: string }) {
           </tbody>
         </table>
 
+        <h2 id="doc-blocks">Blocks, volumes and extents</h2>
+        <p>A Satchel block is immutable content: the files service cuts a file into pieces no larger than 4 MiB, hashes each piece with SHA-256 and uses that hash as the address. The same bytes therefore have the same address, which is how a second upload can reuse an existing block instead of writing it again (DDL-001, DDL-002) <C id="B2" />.</p>
+        <p>The Block Index maps that hash to a volume and byte offset. A volume belongs to one 1 GiB bucket, accepts blocks until 64 MiB or ten minutes, then closes. The Master allocates open volumes and keeps that lifecycle out of the put path (DDL-003, DDL-004, DDL-009). On a node, each replica or coded fragment is one append-only extent file. A record stores the hash and length beside the block bytes, so startup can rebuild the node's in-memory lookup by scanning the extent. The node fsyncs the record before it acknowledges it (DDL-011, DDL-018).</p>
+
         <h2 id="doc-write">Writing a file</h2>
         <ol>
           <li>The files service splits the file into blocks of up to 4 MiB and hashes each with SHA-256 (DDL-001).</li>
@@ -85,15 +91,23 @@ export default function Docs({ sub }: { sub?: string }) {
           <li>The files service records the file's ordered block list (DDL-020).</li>
         </ol>
 
+        <h2 id="doc-read">Reading a file</h2>
+        <ol>
+          <li>The files service looks up the manifest, then asks the block API for each content hash in its original order (DDL-020).</li>
+          <li>The Block Index returns the volume, offset and healthy extent locations. For a replicated open volume, the frontend reads one replica and tries another zone if that request fails (DDL-003, DDL-006).</li>
+          <li>For a coded volume, the RS(6,3) read path takes any six of its nine fragments and reconstructs missing data. A whole fragment or one zone can therefore be unavailable (DDL-007). The Compose exercise has nine nodes for that path; the three-node local install stays replicated.</li>
+          <li>The files service joins verified blocks into the response. It does not need to understand volume placement or the on-disk extent format.</li>
+        </ol>
+
         <h2 id="doc-durability">Replication, then erasure coding</h2>
-        <p>New data is replicated: three full copies, 3x the bytes. When a volume fills (64 MiB) or has been open 10 minutes, the Master closes it and encodes it as Reed-Solomon RS(6,3): 6 data and 3 parity fragments, three per zone, so 1.5x the bytes and any 3 of the 9 can be lost (DDL-004, DDL-007, DDL-008). Magic Pocket also replicates new blocks first and erasure codes them later <C id="B2" /><C id="B5" />.</p>
+        <p>New data is replicated: three full copies, 3x the bytes. When a volume fills (64 MiB) or has been open 10 minutes, the Master closes it and encodes it as Reed-Solomon RS(6,3): 6 data and 3 parity fragments, three per zone, so 1.5x the bytes and any 3 of the 9 can be lost (DDL-004, DDL-007, DDL-008). A six-fragment read can rebuild a missing fragment, which is why a coded volume keeps serving through a zone loss. Magic Pocket also replicates new blocks first and erasure codes them later <C id="B2" /><C id="B5" />.</p>
         <p className="muted">The local install keeps volumes replicated, since RS(6,3) needs 9 nodes and it runs 3. The cost panel shows both figures.</p>
 
         <h2 id="doc-failure">When a node fails</h2>
-        <p>Reads try another replica straight away. Writes move to another open volume. If a node stays down longer than the repair threshold (15 minutes in Magic Pocket <C id="B2" />, 30 seconds in Satchel's tests), the verifier rebuilds its replicas or fragments on healthy nodes (DDL-010). The Disk Scrubber keeps reading data back to catch silent corruption (DDL-012) <C id="B3" />.</p>
+        <p>Reads try another replica straight away, or reconstruct from six coded fragments. Writes move to another open volume. If a node stays down longer than the repair threshold (15 minutes in Magic Pocket <C id="B2" />, 30 seconds in Satchel's tests), the Master rebuilds its replicas or fragments on healthy nodes after the verifier reports the condition (DDL-010). The verifier's Disk Scrubber reads data back to catch silent corruption, and its Metadata Scanner checks that the index and extents agree (DDL-012) <C id="B3" />.</p>
 
         <h2 id="doc-files">Files on top of blocks</h2>
-        <p>Magic Pocket stores only blocks; Dropbox keeps file metadata in separate systems such as FileJournal <C id="B2" />. Satchel adds a small SQLite manifest so the demo can store whole files: each file's block list, plus a reference count per block, so deleting a file only releases blocks no other file uses. That layer is a deliberate deviation from Magic Pocket (DDL-020).</p>
+        <p>Magic Pocket stores only blocks; Dropbox keeps file metadata in separate systems such as FileJournal <C id="B2" />. Satchel adds a small SQLite manifest so the demo can store whole files: the original path, size, creation time and ordered block list, plus a reference count per block. Deleting a file hides it immediately and only releases a block that no other manifest still references. That layer is a deliberate deviation from Magic Pocket (DDL-020).</p>
 
         <h2 id="doc-cost">Rent or own</h2>
         <p>Renting costs per GB-month and per request, from the first byte. Owning costs a lot up front and every month, whatever you store: servers, power, space and the engineers who run it. So the cloud wins small and owning wins big (our inference, which the cost model tests). The <a href="calculator/index.html">calculator</a> runs the same cost engine as the report and finds the break-even size for any inputs.</p>

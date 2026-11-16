@@ -5,6 +5,7 @@
 //   node web/calculator/smoke.mjs
 import { readFileSync } from "node:fs";
 import { initSync, calculate, defaults } from "./pkg/satchel_calc.js";
+import { technicalTotals, visibleProviders } from "./view-model.js";
 
 const here = new URL(".", import.meta.url);
 initSync({ module: readFileSync(new URL("pkg/satchel_calc_bg.wasm", here)) });
@@ -37,5 +38,29 @@ if (response.providers.length !== cli.size) {
   console.log(`FAIL page has ${response.providers.length} providers, CLI ${cli.size}`);
   failed += 1;
 }
+
+// The page deliberately compares cloud storage with Magic Pocket-style
+// on-prem storage. The CLI also retains an EC2 model, which is not a Satchel
+// deployment option and must never leak into the web presentation.
+for (const provider of visibleProviders(response)) {
+  if (provider.key === "satchel_ec2") throw new Error("EC2 is visible on the page");
+}
+const technical = technicalTotals(response);
+for (const provider of technical) {
+  const want = cli.get(provider.key);
+  if (want === undefined || Math.abs(provider.total_usd - want) > 0.01) {
+    throw new Error(`technical total differs from CLI for ${provider.key}`);
+  }
+}
+
+const sensitivity = structuredClone(d.request);
+sensitivity.workload.start_bytes *= 10;
+const sensitivityResponse = JSON.parse(calculate(JSON.stringify(sensitivity)));
+for (const provider of technicalTotals(sensitivityResponse)) {
+  const cliProvider = JSON.parse(calculate(JSON.stringify(sensitivity))).providers.find((p) => p.key === provider.key);
+  if (!cliProvider || Math.abs(provider.total_usd - cliProvider.total_usd) > 0.01) {
+    throw new Error(`technical sensitivity total differs for ${provider.key}`);
+  }
+}
 if (failed) process.exit(1);
-console.log("calculator matches the CLI base case");
+console.log("calculator and technical mode match the CLI base case and sensitivity case");
