@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(kind.as_deref(), Some("text/html; charset=utf-8"));
         assert!(String::from_utf8(body)
             .unwrap()
-            .contains("Satchel pricing calculator"));
+            .contains("Satchel cost story"));
     }
 
     #[tokio::test]
