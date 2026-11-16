@@ -26,10 +26,17 @@ struct Fake {
     coded: AtomicBool,
     /// The Block Index answers 503, as while it restarts.
     index_down: AtomicBool,
+    /// Puts after this many succeed are refused for good, like a full disk.
+    refuse_after: Mutex<Option<u32>>,
 }
 
 async fn fake_put(State(f): State<Arc<Fake>>, Path(hash): Path<String>, body: Bytes) -> StatusCode {
-    f.puts.fetch_add(1, Ordering::SeqCst);
+    let n = f.puts.fetch_add(1, Ordering::SeqCst);
+    if f.refuse_after.lock().unwrap().is_some_and(|ok| n >= ok) {
+        // A client error, so the files service stops at once instead of
+        // retrying for half a minute as it does on a 503.
+        return StatusCode::BAD_REQUEST;
+    }
     let left = f.fail_next_puts.load(Ordering::SeqCst);
     if left > 0 {
         f.fail_next_puts.store(left - 1, Ordering::SeqCst);
@@ -296,6 +303,86 @@ async fn the_same_content_is_stored_once() {
     assert_eq!(stats["dedup_saved_bytes"], original.len() as u64);
     assert_eq!(stats["raw_bytes"], original.len() as u64);
     assert_eq!(stats["nodes"][0]["up"], true);
+}
+
+/// Waits for the task that releases a failed upload's blocks.
+async fn stored_blocks_settle(h: &Harness, want: usize) {
+    for _ in 0..100 {
+        if h.fake.blocks.lock().unwrap().len() == want {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!(
+        "{} blocks still stored, want {want}",
+        h.fake.blocks.lock().unwrap().len()
+    );
+}
+
+#[tokio::test]
+async fn a_failed_upload_releases_the_blocks_it_wrote() {
+    let h = harness(Limits::default()).await;
+    *h.fake.refuse_after.lock().unwrap() = Some(2);
+
+    let (status, _) = h.upload("big.bin", &data(3 * BLOCK_BYTES, 9)).await;
+
+    assert!(status >= 500, "{status}");
+    stored_blocks_settle(&h, 0).await;
+    assert_eq!(h.get_json("/v1/files").await, serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn a_failed_upload_keeps_blocks_that_files_use() {
+    let h = harness(Limits::default()).await;
+    let shared = data(BLOCK_BYTES, 10);
+    assert_eq!(h.upload("kept.bin", &shared).await.0, 201);
+    let mut failing = shared.clone();
+    failing.extend(data(BLOCK_BYTES, 11));
+    failing.extend(data(10, 12));
+    // kept.bin took one put; the failing upload gets two more, then a refusal.
+    *h.fake.refuse_after.lock().unwrap() = Some(3);
+
+    assert!(h.upload("failing.bin", &failing).await.0 >= 500);
+
+    stored_blocks_settle(&h, 1).await;
+    let files = h.get_json("/v1/files").await;
+    let id = files[0]["id"].as_i64().unwrap();
+    let r = h
+        .http
+        .get(format!("{}/v1/files/{id}/content", h.url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.bytes().await.unwrap().to_vec(), shared);
+}
+
+#[tokio::test]
+async fn an_upload_cut_off_by_the_client_releases_its_blocks() {
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Limits::default()).await;
+    let addr = h.url.trim_start_matches("http://");
+    let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let total = 3 * BLOCK_BYTES;
+    let head = format!(
+        "POST /v1/files?name=cut.bin HTTP/1.1\r\nHost: {addr}\r\nContent-Length: {total}\r\n\r\n"
+    );
+    socket.write_all(head.as_bytes()).await.unwrap();
+    // One whole block and a bit, then the browser tab closes.
+    socket
+        .write_all(&data(BLOCK_BYTES + 1000, 13))
+        .await
+        .unwrap();
+    for _ in 0..100 {
+        if !h.fake.blocks.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.fake.blocks.lock().unwrap().len(), 1);
+    drop(socket);
+
+    stored_blocks_settle(&h, 0).await;
+    assert_eq!(h.get_json("/v1/files").await, serde_json::json!([]));
 }
 
 #[tokio::test]
