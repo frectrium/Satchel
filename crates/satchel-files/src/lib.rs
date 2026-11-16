@@ -81,6 +81,9 @@ pub struct AppState {
     backend: Backend,
     auth: Option<auth::Auth>,
     config: Config,
+    /// Blocks that uploads in progress use, with a count per upload. A block
+    /// leaves the index only when no file and no running upload needs it.
+    pins: tokio::sync::Mutex<HashMap<String, u32>>,
 }
 
 impl AppState {
@@ -90,6 +93,7 @@ impl AppState {
             backend: Backend::Satchel { client, manifest },
             auth: None,
             config,
+            pins: Default::default(),
         })
     }
 
@@ -99,6 +103,7 @@ impl AppState {
             backend: Backend::S3(store),
             auth: Some(auth),
             config,
+            pins: Default::default(),
         })
     }
 
@@ -614,7 +619,8 @@ async fn upload(
     let name = clean_name(q.name.as_deref());
     match &state.backend {
         Backend::Satchel { client, manifest } => {
-            upload_satchel(client, manifest, &state.config.limits, &name, body).await
+            let upload = Upload::new(state.clone());
+            upload_satchel(client, manifest, &state.config.limits, &name, body, upload).await
         }
         Backend::S3(store) => upload_s3(store, &state.config.limits, &name, &headers, body).await,
     }
@@ -669,12 +675,121 @@ async fn upload_s3(
     }
 }
 
+/// The blocks one upload has pinned and newly written. If the upload doesn't
+/// finish (an error, a full disk, the browser going away), dropping this
+/// releases the blocks it wrote that no file uses, so they don't sit in the
+/// index forever where even compaction can't reclaim them.
+struct Upload {
+    state: Arc<AppState>,
+    pinned: Vec<String>,
+    created: Vec<String>,
+    done: bool,
+}
+
+impl Upload {
+    fn new(state: Arc<AppState>) -> Self {
+        Self {
+            state,
+            pinned: Vec::new(),
+            created: Vec::new(),
+            done: false,
+        }
+    }
+
+    /// Pins the block, then stores it. Pinning first means a delete running
+    /// at the same time can't drop a block this upload is about to reuse.
+    async fn store(
+        &mut self,
+        client: &SatchelClient,
+        block: Vec<u8>,
+    ) -> anyhow::Result<(String, u64, bool)> {
+        let hash = BlockHash::of(&block).to_string();
+        let len = block.len() as u64;
+        *self
+            .state
+            .pins
+            .lock()
+            .await
+            .entry(hash.clone())
+            .or_default() += 1;
+        self.pinned.push(hash.clone());
+        let written = client.put_block(&hash, Bytes::from(block)).await?;
+        if written {
+            self.created.push(hash.clone());
+        }
+        Ok((hash, len, written))
+    }
+
+    /// The file is in the manifest, so its blocks are safe without pins.
+    async fn finish(mut self) {
+        self.done = true;
+        let mut pins = self.state.pins.lock().await;
+        unpin(&mut pins, &self.pinned);
+    }
+}
+
+impl Drop for Upload {
+    fn drop(&mut self) {
+        if self.done || self.pinned.is_empty() {
+            return;
+        }
+        let state = self.state.clone();
+        let pinned = std::mem::take(&mut self.pinned);
+        let created = std::mem::take(&mut self.created);
+        // Drop can't wait, and a dropped request can't either: finish in a task.
+        tokio::spawn(release_failed_upload(state, pinned, created));
+    }
+}
+
+fn unpin(pins: &mut HashMap<String, u32>, hashes: &[String]) {
+    for hash in hashes {
+        if let Some(count) = pins.get_mut(hash) {
+            *count -= 1;
+            if *count == 0 {
+                pins.remove(hash);
+            }
+        }
+    }
+}
+
+/// Deletes the blocks a failed upload wrote, unless a file or another
+/// running upload uses them. Blocks it found already stored are left alone:
+/// they may belong to someone using the block API directly.
+async fn release_failed_upload(
+    state: Arc<AppState>,
+    pinned: Vec<String>,
+    mut created: Vec<String>,
+) {
+    let Backend::Satchel { client, manifest } = &state.backend else {
+        return;
+    };
+    let mut pins = state.pins.lock().await;
+    unpin(&mut pins, &pinned);
+    created.sort();
+    created.dedup();
+    let mut released = 0;
+    for hash in &created {
+        if pins.contains_key(hash) || manifest.has_block(hash).unwrap_or(true) {
+            continue;
+        }
+        match client.delete_block(hash).await {
+            Ok(()) => released += 1,
+            Err(e) => tracing::warn!(%hash, "could not release a block of a failed upload: {e:#}"),
+        }
+    }
+    tracing::info!(
+        released,
+        "released the blocks of an upload that didn't finish"
+    );
+}
+
 async fn upload_satchel(
     client: &SatchelClient,
     manifest: &Manifest,
     limits: &Limits,
     name: &str,
     body: Body,
+    mut upload: Upload,
 ) -> Response {
     let started = Instant::now();
     let used = match manifest.totals() {
@@ -688,13 +803,6 @@ async fn upload_satchel(
     let mut size = 0u64;
     let mut blocks: Vec<(String, u64)> = Vec::new();
     let (mut new_blocks, mut new_bytes) = (0u64, 0u64);
-
-    let store = |block: Vec<u8>| async move {
-        let hash = BlockHash::of(&block).to_string();
-        let len = block.len() as u64;
-        let written = client.put_block(&hash, Bytes::from(block)).await?;
-        anyhow::Ok((hash, len, written))
-    };
 
     loop {
         let chunk = match stream.next().await {
@@ -722,7 +830,7 @@ async fn upload_satchel(
             rest = &rest[take..];
             if pending.len() == BLOCK_BYTES {
                 let block = std::mem::replace(&mut pending, Vec::with_capacity(BLOCK_BYTES));
-                match store(block).await {
+                match upload.store(client, block).await {
                     Ok((hash, len, written)) => {
                         if written {
                             new_blocks += 1;
@@ -736,7 +844,7 @@ async fn upload_satchel(
         }
     }
     if !pending.is_empty() {
-        match store(pending).await {
+        match upload.store(client, pending).await {
             Ok((hash, len, written)) => {
                 if written {
                     new_blocks += 1;
@@ -753,6 +861,7 @@ async fn upload_satchel(
         Ok(f) => f,
         Err(e) => return internal(e),
     };
+    upload.finish().await;
     let report = UploadReport {
         backend: "satchel",
         blocks: blocks.len() as u64,
@@ -887,11 +996,16 @@ async fn remove(
         Ok(None) => return error(StatusCode::NOT_FOUND, "no such file"),
         Err(e) => return internal(e),
     };
+    // Holding the pins while deleting means an upload can't reuse a block
+    // between the check and the delete.
+    let pins = state.pins.lock().await;
     for hash in &orphans {
+        if pins.contains_key(hash) {
+            continue;
+        }
         if let Err(e) = client.delete_block(hash).await {
-            // The file is gone from the manifest either way. A block left in
-            // the index only costs space, like Magic Pocket without
-            // compaction (DDL-013).
+            // The file is gone from the manifest either way. A block left
+            // in the index only costs space.
             tracing::warn!(%hash, "could not drop a released block: {e:#}");
         }
     }

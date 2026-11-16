@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Files service
+- An upload that doesn't finish (a full disk, a failed block write, the browser closing) now releases the blocks it wrote, unless a file or another upload in progress uses them. Before, they stayed in the Block Index with no file pointing at them, so even `satchel compact` couldn't reclaim them
+
 ## v2.0.0, 2026-11-17
 
 Compaction and coded reads: volumes stay replicated until `satchel compact` reclaims deleted space and codes them as RS(6,3), and every read works from either layout.
