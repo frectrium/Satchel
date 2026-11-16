@@ -98,8 +98,10 @@ fn fake_index(index: Index) -> Router {
 #[derive(Default)]
 struct FakeNode {
     extents: HashMap<u64, Vec<u8>>,
+    fragments: HashMap<(u64, u8), Vec<u8>>,
     fail_writes: bool,
     fail_reads: bool,
+    missing_fragments: Vec<(u64, u8)>,
     reads: usize,
 }
 
@@ -149,8 +151,28 @@ fn fake_node(node: Node) -> Router {
             None => StatusCode::NOT_FOUND.into_response(),
         }
     }
+    async fn fragment(
+        State(node): State<Node>,
+        Path((volume, fragment)): Path<(u64, u8)>,
+        Query(q): Query<HashMap<String, u64>>,
+    ) -> Response {
+        let node = node.lock().unwrap();
+        if node.missing_fragments.contains(&(volume, fragment)) {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+        let Some(bytes) = node.fragments.get(&(volume, fragment)) else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        let offset = q.get("offset").copied().unwrap_or(0) as usize;
+        let length = q.get("length").copied().unwrap_or(bytes.len() as u64) as usize;
+        match bytes.get(offset..offset.saturating_add(length)) {
+            Some(range) => Bytes::copy_from_slice(range).into_response(),
+            None => StatusCode::RANGE_NOT_SATISFIABLE.into_response(),
+        }
+    }
     Router::new()
         .route("/extents/{volume}", post(append).get(read))
+        .route("/extents/{volume}/fragments/{fragment}", get(fragment))
         // axum's default limit is 2 MB. The real node must raise it too (#67).
         .layer(DefaultBodyLimit::max(8 << 20))
         .with_state(node)
@@ -273,6 +295,63 @@ impl Cluster {
             .map(Vec::len)
             .sum()
     }
+}
+
+fn code_volume(c: &Cluster, hash: BlockHash, data: &[u8], missing: &[usize]) {
+    let fragments = satchel_common::ec::encode(data).unwrap();
+    let ids: Vec<String> = (0..satchel_common::ec::TOTAL)
+        .map(|index| format!("n{}", index % c.nodes.len()))
+        .collect();
+    let entry = BlockEntry {
+        volume: 99,
+        offset: 0,
+        length: data.len() as u64,
+    };
+    let mut index = c.index.lock().unwrap();
+    index.blocks.insert(hash.to_string(), entry);
+    index.volumes.push(Volume {
+        id: 99,
+        state: VolumeState::Closed,
+        kind: VolumeKind::Rs63,
+        generation: 1,
+        opened_at_secs: 0,
+        nodes: ids,
+        size: data.len() as u64,
+    });
+    drop(index);
+    for (fragment, bytes) in fragments.into_iter().enumerate() {
+        let node = &c.nodes[fragment % c.nodes.len()];
+        node.lock()
+            .unwrap()
+            .fragments
+            .insert((99, fragment as u8), bytes);
+    }
+    for &fragment in missing {
+        c.nodes[fragment % c.nodes.len()]
+            .lock()
+            .unwrap()
+            .missing_fragments
+            .push((99, fragment as u8));
+    }
+}
+
+#[tokio::test]
+async fn coded_blocks_read_directly_and_with_three_fragments_missing() {
+    let c = cluster().await;
+    let (hash, data) = block(800, 12_345);
+    code_volume(&c, hash, &data, &[]);
+    assert_eq!(c.get(&hash.to_string()).await, (200, data.clone()));
+    let c = cluster().await;
+    code_volume(&c, hash, &data, &[0, 3, 7]);
+    assert_eq!(c.get(&hash.to_string()).await, (200, data));
+}
+
+#[tokio::test]
+async fn coded_read_with_four_missing_fragments_fails_cleanly() {
+    let c = cluster().await;
+    let (hash, data) = block(801, 12_345);
+    code_volume(&c, hash, &data, &[0, 2, 5, 8]);
+    assert_eq!(c.get(&hash.to_string()).await.0, 503);
 }
 
 #[tokio::test]
