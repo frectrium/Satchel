@@ -34,7 +34,7 @@ hex = "0.4"
 prometheus = { version = "0.14", default-features = false, features = ["process"] }
 reed-solomon-erasure = "6.0"
 reqwest = { version = "0.13", default-features = false }
-rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.42", features = ["bundled", "fallible_uint"] }
 rusty-s3 = { version = "0.11", default-features = false, features = ["rustcrypto"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -42,7 +42,7 @@ sha2 = "0.11"
 toml = "1.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.7", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 ureq = { version = "3.4", default-features = false, features = ["json"] }
