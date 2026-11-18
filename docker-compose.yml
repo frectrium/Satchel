@@ -116,7 +116,9 @@ services:
   files:
     <<: *satchel
     command: satchel-files
-    environment: { <<: *env, SATCHEL_PORT: "47800", SATCHEL_API_URL: "http://api:8080", SATCHEL_INDEX_URL: "http://index:8081", SATCHEL_NODES: *nodes, SATCHEL_DATA_DIR: /data }
+    # The hosted website calls this API from the browser, so its origin must
+    # be allowed, as the installer does for the local package.
+    environment: { <<: *env, SATCHEL_PORT: "47800", SATCHEL_API_URL: "http://api:8080", SATCHEL_INDEX_URL: "http://index:8081", SATCHEL_NODES: *nodes, SATCHEL_DATA_DIR: /data, SATCHEL_ALLOWED_ORIGINS: "${SATCHEL_ALLOWED_ORIGINS:-https://d9x0tsh4el1fi.cloudfront.net}" }
     ports: ["47800:47800"]
     volumes: ["files:/data"]
     depends_on: [api]
